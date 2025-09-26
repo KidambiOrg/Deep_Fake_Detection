@@ -1,1 +1,2 @@
-# Deep_Fake_Detection
+# Deep Fake Detection
+A library to detect deep fake images. 
