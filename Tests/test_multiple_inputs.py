@@ -8,7 +8,7 @@ Test the updated deepfake detector with multiple input types:
 - Raw bytes
 """
 
-from lib.detect_deepfake_image import DeepfakeImageDetector
+from detectionLib.detect_deepfake_image import DeepfakeImageDetector
 from PIL import Image
 import numpy as np
 import base64

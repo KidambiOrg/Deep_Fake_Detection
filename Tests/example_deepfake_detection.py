@@ -5,7 +5,7 @@ This script demonstrates how to use the DeepfakeImageDetector class
 to detect deepfake images using the prithivMLMods/deepfake-detector-model-va1 model.
 """
 
-from lib.detect_deepfake_image import DeepfakeImageDetector, DeepfakeDetectionResult
+from detectionLib.detect_deepfake_image import DeepfakeImageDetector, DeepfakeDetectionResult
 from PIL import Image
 import os
 

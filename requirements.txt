@@ -6,3 +6,5 @@ sentencepiece>=0.1.96
 protobuf>=3.20.0
 Pillow>=8.0.0
 torchvision>=0.10.0
+scipy>=1.7.0
+huggingface_hub[hf_xet]

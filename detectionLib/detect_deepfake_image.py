@@ -1,10 +1,14 @@
 """
-Deepfake Image Detection using prithivMLMods/deepfake-detector-model-v1
+Deepfake Image Detection using multiple pre-trained models
 
-This module implements deepfake image detection using a pre-trained model
+This module implements deepfake image detection using various pre-trained models
 from Hugging Face that can classify images as real or deepfake/AI-generated.
 
-Model: prithivMLMods/deepfake-detector-model-v1
+Supported Models:
+1. prithivMLMods/deepfake-detector-model-v1 (SigLIP-based)
+2. dima806/deepfake_vs_real_image_detection (Vision Transformer)
+3. umm-maybe/AI-image-detector (EfficientNet-based)
+4. Organika/sdxl-detector (Stable Diffusion detector)
 """
 
 import torch
@@ -31,6 +35,49 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# Model Registry - Available deepfake detection models
+MODEL_REGISTRY = {
+    'prithiv-v1': {
+        'name': 'prithivMLMods/deepfake-detector-model-v1',
+        'description': 'SigLIP-based deepfake detector (default)',
+        'architecture': 'SigLIP',
+        'labels': {0: 'Fake', 1: 'Real'},
+        'recommended_threshold': 0.5,
+    },
+    'dima-vit': {
+        'name': 'dima806/deepfake_vs_real_image_detection',
+        'description': 'Vision Transformer based detector',
+        'architecture': 'ViT',
+        'labels': None,  # Will be loaded from model
+        'recommended_threshold': 0.5,
+    },
+    'umm-efficientnet': {
+        'name': 'umm-maybe/AI-image-detector',
+        'description': 'EfficientNet-based AI image detector',
+        'architecture': 'EfficientNet',
+        'labels': None,
+        'recommended_threshold': 0.5,
+    },
+    'organika-sdxl': {
+        'name': 'Organika/sdxl-detector',
+        'description': 'Specialized for Stable Diffusion generated images',
+        'architecture': 'Custom',
+        'labels': None,
+        'recommended_threshold': 0.5,
+    }
+}
+
+
+def list_available_models() -> Dict[str, Dict[str, Any]]:
+    """
+    Get a list of all available deepfake detection models
+    
+    Returns:
+        Dictionary of available models with their details
+    """
+    return MODEL_REGISTRY.copy()
+
+
 @dataclass
 class DeepfakeDetectionResult:
     """Result of deepfake detection analysis"""
@@ -39,14 +86,62 @@ class DeepfakeDetectionResult:
     scores: Dict[str, float]
     processing_time: float
     image_path: Optional[str] = None
+    model_name: Optional[str] = None
+    
+    def get_recommendation(self, threshold: float = 0.5) -> str:
+        """
+        Get a recommendation based on the detection results
+        
+        Args:
+            threshold: The threshold used for detection
+            
+        Returns:
+            A string with recommendations
+        """
+        fake_score = self.scores.get('Fake', self.scores.get('fake', 0.0))
+        real_score = self.scores.get('Real', self.scores.get('real', 0.0))
+        
+        if self.is_deepfake:
+            if fake_score > 0.8:
+                return "High confidence deepfake detection. Very likely to be fake."
+            elif fake_score > 0.6:
+                return "Moderate confidence deepfake detection. Likely to be fake."
+            else:
+                return "Low confidence deepfake detection. Consider manual review or using ensemble voting with multiple models."
+        else:
+            if real_score > 0.8:
+                return "High confidence real image. Very likely to be authentic."
+            elif real_score > 0.6:
+                return "Moderate confidence real image. Likely to be authentic."
+            elif fake_score < 0.3:
+                return f"Low fake score ({fake_score:.2%}). Image appears real, but consider:\n" \
+                       f"  - Lowering threshold (current: {threshold})\n" \
+                       f"  - Trying a different model (use list_available_models())\n" \
+                       f"  - Using ensemble voting with multiple models"
+            else:
+                return "Borderline case. Consider:\n" \
+                       f"  - Manual review\n" \
+                       f"  - Using ensemble voting with multiple models\n" \
+                       f"  - Adjusting threshold"
+
+
+@dataclass
+class EnsembleResult:
+    """Result from ensemble voting of multiple models"""
+    is_deepfake: bool
+    confidence: float
+    individual_results: List[DeepfakeDetectionResult]
+    voting_summary: Dict[str, int]
+    average_fake_score: float
+    average_real_score: float
 
 
 class DeepfakeImageDetector:
     """
-    Deepfake Image Detector using prithivMLMods/deepfake-detector-model-v1
+    Deepfake Image Detector supporting multiple pre-trained models
     
     This class provides functionality to detect whether an image is real or deepfake/AI-generated
-    using a pre-trained transformer model.
+    using various pre-trained transformer models.
     """
     
     def __init__(self, 
@@ -56,10 +151,20 @@ class DeepfakeImageDetector:
         Initialize the deepfake detector
         
         Args:
-            model_name: Name of the pre-trained model to use
+            model_name: Name of the pre-trained model to use. Can be:
+                - Full Hugging Face model name (e.g., 'prithivMLMods/deepfake-detector-model-v1')
+                - Short name from MODEL_REGISTRY (e.g., 'prithiv-v1', 'dima-vit')
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
         """
-        self.model_name = model_name
+        # Check if model_name is a short name in registry
+        if model_name in MODEL_REGISTRY:
+            self.model_key = model_name
+            self.model_name = MODEL_REGISTRY[model_name]['name']
+            self.model_info = MODEL_REGISTRY[model_name]
+        else:
+            self.model_key = None
+            self.model_name = model_name
+            self.model_info = None
         
         # Set device
         if device is None:
@@ -85,20 +190,33 @@ class DeepfakeImageDetector:
             # Load processor and model
             self.processor = AutoImageProcessor.from_pretrained(self.model_name)
             
-            # Use SiglipForImageClassification since we know this model uses SigLIP architecture
-            try:
-                self.model = SiglipForImageClassification.from_pretrained(
-                    self.model_name,
-                    torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
-                )
-                logger.info("Using SiglipForImageClassification")
-            except Exception as e:
-                logger.warning(f"Failed to load with SiglipForImageClassification: {e}")
-                logger.info("Falling back to AutoModelForImageClassification")
-                self.model = AutoModelForImageClassification.from_pretrained(
-                    self.model_name,
-                    torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
-                )
+            # Try different model architectures
+            model_loaded = False
+            
+            # Try SigLIP first (for prithiv model)
+            if self.model_info and self.model_info['architecture'] == 'SigLIP':
+                try:
+                    self.model = SiglipForImageClassification.from_pretrained(
+                        self.model_name,
+                        torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
+                    )
+                    logger.info("Using SiglipForImageClassification")
+                    model_loaded = True
+                except Exception as e:
+                    logger.warning(f"Failed to load with SiglipForImageClassification: {e}")
+            
+            # Fallback to AutoModel
+            if not model_loaded:
+                try:
+                    self.model = AutoModelForImageClassification.from_pretrained(
+                        self.model_name,
+                        torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
+                    )
+                    logger.info("Using AutoModelForImageClassification")
+                    model_loaded = True
+                except Exception as e:
+                    logger.error(f"Failed to load model: {e}")
+                    raise
             
             # Move model to device
             if self.model is not None:
@@ -276,14 +394,30 @@ class DeepfakeImageDetector:
                 scores = {self.labels[i]: float(probabilities[0][i].cpu()) 
                          for i in range(len(self.labels))}
                 
-                # Determine if deepfake
-                # Assuming the model has labels like 'REAL' and 'FAKE' or similar
-                # We'll use the highest probability score
-                max_label = max(scores.keys(), key=lambda k: scores[k])
-                confidence = scores[max_label]
+                # Find the fake/deepfake score directly
+                fake_score = 0.0
+                fake_label = None
+                deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic']
                 
-                # Determine if deepfake based on label
-                is_deepfake = self._is_deepfake_label(max_label, confidence, threshold)
+                for label, score in scores.items():
+                    label_lower = label.lower()
+                    for indicator in deepfake_indicators:
+                        if indicator in label_lower:
+                            fake_score = score
+                            fake_label = label
+                            break
+                    if fake_label:
+                        break
+                
+                # If we found a fake label, use its score directly
+                if fake_label:
+                    is_deepfake = fake_score >= threshold
+                    confidence = fake_score
+                else:
+                    # Fallback to old logic if no fake label found
+                    max_label = max(scores.keys(), key=lambda k: scores[k])
+                    confidence = scores[max_label]
+                    is_deepfake = self._is_deepfake_label(max_label, confidence, threshold)
                 
                 processing_time = time.time() - start_time
                 
@@ -292,7 +426,8 @@ class DeepfakeImageDetector:
                     confidence=confidence,
                     scores=scores,
                     processing_time=processing_time,
-                    image_path=image_path
+                    image_path=image_path,
+                    model_name=self.model_name
                 )
                 
         except Exception as e:
@@ -320,12 +455,15 @@ class DeepfakeImageDetector:
         # Check for deepfake indicators
         for indicator in deepfake_indicators:
             if indicator in label_lower:
+                # If model says "Fake" with high confidence, it IS a deepfake
                 return confidence >= threshold
         
         # Check for real indicators
         for indicator in real_indicators:
             if indicator in label_lower:
-                return confidence < threshold
+                # If model says "Real" with high confidence, it is NOT a deepfake
+                # So return True (is_deepfake) only if confidence is LOW (meaning model is uncertain)
+                return confidence < (1.0 - threshold)
         
         # Default: use threshold on confidence
         # If we can't determine from label, assume higher confidence means more likely to be the predicted class
@@ -412,10 +550,170 @@ class DeepfakeImageDetector:
             
         return {
             'model_name': self.model_name,
+            'model_key': self.model_key,
             'device': str(self.device),
             'labels': self.labels,
             'num_parameters': sum(p.numel() for p in self.model.parameters()),
             'model_size_mb': sum(p.numel() * p.element_size() for p in self.model.parameters()) / 1024 / 1024
+        }
+
+
+class EnsembleDetector:
+    """
+    Ensemble detector that uses multiple models for improved accuracy
+    """
+    
+    def __init__(self, 
+                 model_keys: Optional[List[str]] = None,
+                 device: Optional[str] = None):
+        """
+        Initialize ensemble detector with multiple models
+        
+        Args:
+            model_keys: List of model keys from MODEL_REGISTRY to use. 
+                       If None, uses all available models.
+            device: Device to run inference on
+        """
+        if model_keys is None:
+            # Use default models that are most reliable
+            model_keys = ['prithiv-v1', 'dima-vit']
+        
+        self.detectors = []
+        logger.info(f"Initializing ensemble with models: {model_keys}")
+        
+        for key in model_keys:
+            try:
+                detector = DeepfakeImageDetector(model_name=key, device=device)
+                self.detectors.append(detector)
+                logger.info(f"Successfully loaded model: {key}")
+            except Exception as e:
+                logger.warning(f"Failed to load model {key}: {e}")
+        
+        if not self.detectors:
+            raise RuntimeError("No models could be loaded for ensemble")
+        
+        logger.info(f"Ensemble initialized with {len(self.detectors)} models")
+    
+    def detect(self, 
+               image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+               threshold: float = 0.5,
+               voting_method: str = 'majority') -> EnsembleResult:
+        """
+        Detect deepfake using ensemble of models
+        
+        Args:
+            image_input: Image input (same formats as DeepfakeImageDetector)
+            threshold: Threshold for each individual model
+            voting_method: Voting method to use:
+                - 'majority': Simple majority vote
+                - 'weighted': Weighted by confidence
+                - 'unanimous': All models must agree
+                - 'average': Average of fake scores
+            
+        Returns:
+            EnsembleResult with combined prediction
+        """
+        # Get predictions from all models
+        individual_results = []
+        for detector in self.detectors:
+            try:
+                result = detector.detect(image_input, threshold)
+                individual_results.append(result)
+            except Exception as e:
+                logger.error(f"Error in model {detector.model_name}: {e}")
+        
+        if not individual_results:
+            raise RuntimeError("All models failed to process the image")
+        
+        # Calculate voting
+        fake_votes = sum(1 for r in individual_results if r.is_deepfake)
+        real_votes = len(individual_results) - fake_votes
+        
+        voting_summary = {
+            'fake': fake_votes,
+            'real': real_votes,
+            'total': len(individual_results)
+        }
+        
+        # Calculate average scores
+        fake_scores = []
+        real_scores = []
+        for result in individual_results:
+            fake_score = result.scores.get('Fake', result.scores.get('fake', 0.0))
+            real_score = result.scores.get('Real', result.scores.get('real', 0.0))
+            fake_scores.append(fake_score)
+            real_scores.append(real_score)
+        
+        avg_fake_score = sum(fake_scores) / len(fake_scores) if fake_scores else 0.0
+        avg_real_score = sum(real_scores) / len(real_scores) if real_scores else 0.0
+        
+        # Determine final prediction based on voting method
+        if voting_method == 'majority':
+            is_deepfake = fake_votes > real_votes
+            confidence = max(avg_fake_score, avg_real_score)
+        
+        elif voting_method == 'weighted':
+            # Weight votes by confidence
+            weighted_fake = sum(r.confidence for r in individual_results if r.is_deepfake)
+            weighted_real = sum(r.confidence for r in individual_results if not r.is_deepfake)
+            is_deepfake = weighted_fake > weighted_real
+            confidence = max(weighted_fake, weighted_real) / len(individual_results)
+        
+        elif voting_method == 'unanimous':
+            # All models must agree
+            is_deepfake = fake_votes == len(individual_results)
+            confidence = avg_fake_score if is_deepfake else avg_real_score
+        
+        elif voting_method == 'average':
+            # Use average fake score
+            is_deepfake = avg_fake_score >= threshold
+            confidence = avg_fake_score
+        
+        else:
+            raise ValueError(f"Unknown voting method: {voting_method}")
+        
+        return EnsembleResult(
+            is_deepfake=is_deepfake,
+            confidence=confidence,
+            individual_results=individual_results,
+            voting_summary=voting_summary,
+            average_fake_score=avg_fake_score,
+            average_real_score=avg_real_score
+        )
+    
+    def compare_models(self, 
+                      image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> Dict[str, Any]:
+        """
+        Compare predictions from all models
+        
+        Args:
+            image_input: Image input
+            threshold: Threshold for detection
+            
+        Returns:
+            Dictionary with comparison results
+        """
+        results = []
+        for detector in self.detectors:
+            try:
+                result = detector.detect(image_input, threshold)
+                results.append({
+                    'model': detector.model_name,
+                    'model_key': detector.model_key,
+                    'is_deepfake': result.is_deepfake,
+                    'confidence': result.confidence,
+                    'scores': result.scores,
+                    'processing_time': result.processing_time
+                })
+            except Exception as e:
+                logger.error(f"Error in model {detector.model_name}: {e}")
+        
+        return {
+            'image': image_input if isinstance(image_input, str) else 'N/A',
+            'threshold': threshold,
+            'model_results': results,
+            'agreement': len(set(r['is_deepfake'] for r in results)) == 1
         }
 
 
