@@ -45,9 +45,7 @@ def process_results_example():
             # HuggingFace models
             'prithiv-v1',
             'dima-vit',
-            'organika-sdxl',
-            #'deit_base',
-            #'resnet101'
+            'organika-sdxl'
         ]
     )
     
