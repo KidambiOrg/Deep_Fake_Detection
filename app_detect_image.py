@@ -46,8 +46,8 @@ def process_results_example():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',
-            'deit_base',
-            'resnet101'
+            #'deit_base',
+            #'resnet101'
         ]
     )
     
@@ -64,7 +64,7 @@ def process_results_example():
         image_path = os.path.join(directory_path, image_file)
         if os.path.isfile(image_path):
             try:
-                result = ensemble.detect(image_path, threshold=0.5, voting_method='maximum')
+                result = ensemble.detect(image_path, threshold=0.5, voting_method='weighted')
                 
                 # Collect data for table
                 results_data.append({
