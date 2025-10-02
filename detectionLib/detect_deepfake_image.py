@@ -9,11 +9,18 @@ Supported Models:
 2. dima806/deepfake_vs_real_image_detection (Vision Transformer)
 3. umm-maybe/AI-image-detector (EfficientNet-based)
 4. Organika/sdxl-detector (Stable Diffusion detector)
+5. EfficientNet-B4/B7 (torchvision/timm)
+6. Xception (timm)
+7. ResNet34/50/101 (torchvision/timm)
+8. Vision Transformer (torchvision)
+9. DeiT (timm)
+10. Swin Transformer (torchvision/timm)
 """
 
 import torch
 import torch.nn.functional as F
 from transformers import AutoImageProcessor, SiglipForImageClassification, AutoModelForImageClassification
+from torchvision import models, transforms
 from PIL import Image
 import numpy as np
 import logging
@@ -26,6 +33,14 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 
+# Try to import timm, but don't fail if not available
+try:
+    import timm
+    TIMM_AVAILABLE = True
+except ImportError:
+    TIMM_AVAILABLE = False
+    logging.warning("timm library not available. Some models will not be accessible.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -37,10 +52,12 @@ logger = logging.getLogger(__name__)
 
 # Model Registry - Available deepfake detection models
 MODEL_REGISTRY = {
+    # HuggingFace Models
     'prithiv-v1': {
         'name': 'prithivMLMods/deepfake-detector-model-v1',
         'description': 'SigLIP-based deepfake detector (default)',
         'architecture': 'SigLIP',
+        'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
         'recommended_threshold': 0.5,
     },
@@ -48,6 +65,7 @@ MODEL_REGISTRY = {
         'name': 'dima806/deepfake_vs_real_image_detection',
         'description': 'Vision Transformer based detector',
         'architecture': 'ViT',
+        'source': 'huggingface',
         'labels': None,  # Will be loaded from model
         'recommended_threshold': 0.5,
     },
@@ -55,6 +73,7 @@ MODEL_REGISTRY = {
         'name': 'umm-maybe/AI-image-detector',
         'description': 'EfficientNet-based AI image detector',
         'architecture': 'EfficientNet',
+        'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
     },
@@ -62,9 +81,230 @@ MODEL_REGISTRY = {
         'name': 'Organika/sdxl-detector',
         'description': 'Specialized for Stable Diffusion generated images',
         'architecture': 'Custom',
+        'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
-    }
+    },
+    
+    # TorchVision/Timm Models
+    'efficientnet_b4': {
+        'name': 'efficientnet_b4',
+        'description': 'EfficientNet-B4 from torchvision (pretrained on ImageNet)',
+        'architecture': 'EfficientNet',
+        'source': 'torchvision',
+        'model_func': lambda: models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.DEFAULT),
+        'input_size': 380,
+        'modify_classifier': True,
+        'classifier_attr': 'classifier',
+        'classifier_in_features': 1792,
+        'recommended_threshold': 0.5,
+    },
+    'efficientnet_b7': {
+        'name': 'efficientnet_b7',
+        'description': 'EfficientNet-B7 from torchvision (high accuracy, larger model)',
+        'architecture': 'EfficientNet',
+        'source': 'torchvision',
+        'model_func': lambda: models.efficientnet_b7(weights=models.EfficientNet_B7_Weights.DEFAULT),
+        'input_size': 600,
+        'modify_classifier': True,
+        'classifier_attr': 'classifier',
+        'classifier_in_features': 2560,
+        'recommended_threshold': 0.5,
+    },
+    'efficientnet_b4_timm': {
+        'name': 'efficientnet_b4',
+        'description': 'EfficientNet-B4 from timm (pretrained on ImageNet)',
+        'architecture': 'EfficientNet',
+        'source': 'timm',
+        'model_name': 'efficientnet_b4',
+        'input_size': 380,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'efficientnet_b7_timm': {
+        'name': 'efficientnet_b7',
+        'description': 'EfficientNet-B7 from timm (high accuracy, larger model)',
+        'architecture': 'EfficientNet',
+        'source': 'timm',
+        'model_name': 'efficientnet_b7',
+        'input_size': 600,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'xception': {
+        'name': 'xception',
+        'description': 'Xception architecture (excellent for deepfake detection)',
+        'architecture': 'Xception',
+        'source': 'timm',
+        'model_name': 'xception',
+        'input_size': 299,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'xception41': {
+        'name': 'xception41',
+        'description': 'Xception-41 variant (balanced performance)',
+        'architecture': 'Xception',
+        'source': 'timm',
+        'model_name': 'xception41',
+        'input_size': 299,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'xception65': {
+        'name': 'xception65',
+        'description': 'Xception-65 variant (higher capacity)',
+        'architecture': 'Xception',
+        'source': 'timm',
+        'model_name': 'xception65',
+        'input_size': 299,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'xception71': {
+        'name': 'xception71',
+        'description': 'Xception-71 deeper variant (enhanced for deepfake detection)',
+        'architecture': 'Xception',
+        'source': 'timm',
+        'model_name': 'xception71',
+        'input_size': 299,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'resnet34': {
+        'name': 'resnet34',
+        'description': 'ResNet-34 from torchvision (balanced speed and accuracy)',
+        'architecture': 'ResNet',
+        'source': 'torchvision',
+        'model_func': lambda: models.resnet34(weights=models.ResNet34_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'fc',
+        'classifier_in_features': 512,
+        'recommended_threshold': 0.5,
+    },
+    'resnet50': {
+        'name': 'resnet50',
+        'description': 'ResNet-50 from torchvision (pretrained on ImageNet)',
+        'architecture': 'ResNet',
+        'source': 'torchvision',
+        'model_func': lambda: models.resnet50(weights=models.ResNet50_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'fc',
+        'classifier_in_features': 2048,
+        'recommended_threshold': 0.5,
+    },
+    'resnet101': {
+        'name': 'resnet101',
+        'description': 'ResNet-101 from torchvision (pretrained on ImageNet)',
+        'architecture': 'ResNet',
+        'source': 'torchvision',
+        'model_func': lambda: models.resnet101(weights=models.ResNet101_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'fc',
+        'classifier_in_features': 2048,
+        'recommended_threshold': 0.5,
+    },
+    'vit_b_16': {
+        'name': 'vit_b_16',
+        'description': 'Vision Transformer B/16 from torchvision',
+        'architecture': 'ViT',
+        'source': 'torchvision',
+        'model_func': lambda: models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'heads',
+        'classifier_in_features': 768,
+        'recommended_threshold': 0.5,
+    },
+    'deit_base': {
+        'name': 'deit_base_patch16_224',
+        'description': 'DeiT Base (Data-efficient Image Transformer) - efficient training',
+        'architecture': 'DeiT',
+        'source': 'timm',
+        'model_name': 'deit_base_patch16_224',
+        'input_size': 224,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'deit_small': {
+        'name': 'deit_small_patch16_224',
+        'description': 'DeiT Small (Data-efficient Image Transformer) - faster variant',
+        'architecture': 'DeiT',
+        'source': 'timm',
+        'model_name': 'deit_small_patch16_224',
+        'input_size': 224,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'deit_tiny': {
+        'name': 'deit_tiny_patch16_224',
+        'description': 'DeiT Tiny (Data-efficient Image Transformer) - lightweight',
+        'architecture': 'DeiT',
+        'source': 'timm',
+        'model_name': 'deit_tiny_patch16_224',
+        'input_size': 224,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'swin_b': {
+        'name': 'swin_b',
+        'description': 'Swin Transformer Base from torchvision (hierarchical vision transformer)',
+        'architecture': 'Swin Transformer',
+        'source': 'torchvision',
+        'model_func': lambda: models.swin_b(weights=models.Swin_B_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'head',
+        'classifier_in_features': 1024,
+        'recommended_threshold': 0.5,
+    },
+    'swin_t': {
+        'name': 'swin_t',
+        'description': 'Swin Transformer Tiny from torchvision (faster, lighter version)',
+        'architecture': 'Swin Transformer',
+        'source': 'torchvision',
+        'model_func': lambda: models.swin_t(weights=models.Swin_T_Weights.DEFAULT),
+        'input_size': 224,
+        'modify_classifier': True,
+        'classifier_attr': 'head',
+        'classifier_in_features': 768,
+        'recommended_threshold': 0.5,
+    },
+    'swin_v2_b': {
+        'name': 'swin_v2_b',
+        'description': 'Swin Transformer V2 Base from torchvision (improved version)',
+        'architecture': 'Swin Transformer',
+        'source': 'torchvision',
+        'model_func': lambda: models.swin_v2_b(weights=models.Swin_V2_B_Weights.DEFAULT),
+        'input_size': 256,
+        'modify_classifier': True,
+        'classifier_attr': 'head',
+        'classifier_in_features': 1024,
+        'recommended_threshold': 0.5,
+    },
+    'swin_base_timm': {
+        'name': 'swin_base_patch4_window7_224',
+        'description': 'Swin Transformer Base from timm (hierarchical vision transformer)',
+        'architecture': 'Swin Transformer',
+        'source': 'timm',
+        'model_name': 'swin_base_patch4_window7_224',
+        'input_size': 224,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    'swin_large_timm': {
+        'name': 'swin_large_patch4_window7_224',
+        'description': 'Swin Transformer Large from timm (high capacity model)',
+        'architecture': 'Swin Transformer',
+        'source': 'timm',
+        'model_name': 'swin_large_patch4_window7_224',
+        'input_size': 224,
+        'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
 }
 
 
@@ -560,7 +800,8 @@ class DeepfakeImageDetector:
 
 class EnsembleDetector:
     """
-    Ensemble detector that uses multiple models for improved accuracy
+    Enhanced ensemble detector that uses multiple models for improved accuracy.
+    Supports HuggingFace, torchvision, and timm models.
     """
     
     def __init__(self, 
@@ -571,28 +812,197 @@ class EnsembleDetector:
         
         Args:
             model_keys: List of model keys from MODEL_REGISTRY to use. 
-                       If None, uses all available models.
-            device: Device to run inference on
-        """
-        if model_keys is None:
-            # Use default models that are most reliable
-            model_keys = ['prithiv-v1', 'dima-vit']
+                       If None, uses default HuggingFace models.
+            device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
         
-        self.detectors = []
+        Example:
+            # Use HuggingFace models only
+            ensemble = EnsembleDetector(model_keys=['prithiv-v1', 'dima-vit'])
+            
+            # Mix HuggingFace and torchvision models
+            ensemble = EnsembleDetector(model_keys=[
+                'prithiv-v1', 'efficientnet_b4', 'xception', 'resnet50'
+            ])
+        """
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+        
+        if model_keys is None:
+            # Use default HuggingFace models that are most reliable
+            model_keys = [ 'prithiv-v1', 'dima-vit', 'organika-sdxl']
+        
+        # Validate model keys
+        invalid_keys = [key for key in model_keys if key not in MODEL_REGISTRY]
+        if invalid_keys:
+            raise ValueError(
+                f"Invalid model keys: {invalid_keys}. "
+                f"Available models: {list(MODEL_REGISTRY.keys())}"
+            )
+        
+        self.model_keys = model_keys
+        self.detectors = {}
         logger.info(f"Initializing ensemble with models: {model_keys}")
         
-        for key in model_keys:
-            try:
-                detector = DeepfakeImageDetector(model_name=key, device=device)
-                self.detectors.append(detector)
-                logger.info(f"Successfully loaded model: {key}")
-            except Exception as e:
-                logger.warning(f"Failed to load model {key}: {e}")
+        # Load all models
+        self._load_models()
         
         if not self.detectors:
             raise RuntimeError("No models could be loaded for ensemble")
         
         logger.info(f"Ensemble initialized with {len(self.detectors)} models")
+    
+    def _load_models(self):
+        """Load all specified models"""
+        for key in self.model_keys:
+            try:
+                config = MODEL_REGISTRY[key]
+                
+                if config['source'] == 'huggingface':
+                    # Use existing HuggingFace loading logic
+                    detector = DeepfakeImageDetector(model_name=key, device=str(self.device))
+                    self.detectors[key] = detector
+                    logger.info(f"✓ Loaded HuggingFace model: {key}")
+                    
+                elif config['source'] == 'torchvision':
+                    # Load torchvision model
+                    model = self._load_torchvision_model(config)
+                    self.detectors[key] = self._wrap_pytorch_model(model, key, config)
+                    logger.info(f"✓ Loaded torchvision model: {key}")
+                    
+                elif config['source'] == 'timm':
+                    # Load timm model
+                    if not TIMM_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: timm library not installed")
+                        continue
+                    model = self._load_timm_model(config)
+                    self.detectors[key] = self._wrap_pytorch_model(model, key, config)
+                    logger.info(f"✓ Loaded timm model: {key}")
+                
+            except Exception as e:
+                logger.warning(f"⚠ Failed to load model {key}: {e}")
+    
+    def _load_torchvision_model(self, config: Dict) -> torch.nn.Module:
+        """Load model from torchvision"""
+        import torch.nn as nn
+        
+        model = config['model_func']()
+        
+        if config.get('modify_classifier', False):
+            # Modify final layer for binary classification
+            classifier_attr = config['classifier_attr']
+            in_features = config['classifier_in_features']
+            
+            if classifier_attr == 'classifier':
+                # For EfficientNet
+                model.classifier = nn.Sequential(
+                    nn.Dropout(p=0.3, inplace=True),
+                    nn.Linear(in_features, 2)
+                )
+            elif classifier_attr == 'fc':
+                # For ResNet
+                model.fc = nn.Linear(in_features, 2)
+            elif classifier_attr == 'heads':
+                # For ViT
+                model.heads = nn.Linear(in_features, 2)
+            elif classifier_attr == 'head':
+                # For Swin Transformer
+                model.head = nn.Linear(in_features, 2)
+        
+        model = model.to(self.device)
+        model.eval()
+        return model
+    
+    def _load_timm_model(self, config: Dict) -> torch.nn.Module:
+        """Load model from timm library"""
+        model = timm.create_model(
+            config['model_name'],
+            pretrained=True,
+            num_classes=2  # Binary classification
+        )
+        model = model.to(self.device)
+        model.eval()
+        return model
+    
+    def _wrap_pytorch_model(self, model: torch.nn.Module, model_key: str, config: Dict):
+        """Wrap PyTorch model to match DeepfakeImageDetector interface"""
+        class PyTorchModelWrapper:
+            """Wrapper to make PyTorch models compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, model, device, input_size, model_key, model_name):
+                self.model = model
+                self.device = device
+                self.model_key = model_key
+                self.model_name = model_name
+                self.transform = transforms.Compose([
+                    transforms.Resize((input_size, input_size)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]
+                    )
+                ])
+            
+            def preprocess_image(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes]) -> Image.Image:
+                """Preprocess image input to PIL Image format"""
+                if isinstance(image_input, str):
+                    if not os.path.exists(image_input):
+                        raise FileNotFoundError(f"Image file not found: {image_input}")
+                    image = Image.open(image_input)
+                elif isinstance(image_input, np.ndarray):
+                    image = Image.fromarray(image_input)
+                elif isinstance(image_input, Image.Image):
+                    image = image_input
+                elif isinstance(image_input, bytes):
+                    image = Image.open(io.BytesIO(image_input))
+                elif hasattr(image_input, 'read'):
+                    image = Image.open(image_input)
+                else:
+                    raise ValueError(f"Unsupported image input type: {type(image_input)}")
+                
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                return image
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Predict if image is deepfake"""
+                start_time = time.time()
+                
+                # Preprocess image
+                image = self.preprocess_image(image_input)
+                image_path = image_input if isinstance(image_input, str) else None
+                
+                # Transform and prepare input
+                input_tensor = self.transform(image).unsqueeze(0).to(self.device)
+                
+                # Run inference
+                with torch.no_grad():
+                    outputs = self.model(input_tensor)
+                    probabilities = torch.softmax(outputs, dim=1)
+                    real_prob = float(probabilities[0][0].cpu())
+                    fake_prob = float(probabilities[0][1].cpu())
+                
+                processing_time = time.time() - start_time
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=fake_prob >= threshold,
+                    confidence=fake_prob,
+                    scores={'Real': real_prob, 'Fake': fake_prob},
+                    processing_time=processing_time,
+                    image_path=image_path,
+                    model_name=self.model_name
+                )
+        
+        return PyTorchModelWrapper(
+            model=model,
+            device=self.device,
+            input_size=config['input_size'],
+            model_key=model_key,
+            model_name=config['name']
+        )
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
@@ -609,18 +1019,19 @@ class EnsembleDetector:
                 - 'weighted': Weighted by confidence
                 - 'unanimous': All models must agree
                 - 'average': Average of fake scores
+                - 'maximum': Use prediction from model with highest confidence
             
         Returns:
             EnsembleResult with combined prediction
         """
         # Get predictions from all models
         individual_results = []
-        for detector in self.detectors:
+        for key, detector in self.detectors.items():
             try:
                 result = detector.detect(image_input, threshold)
                 individual_results.append(result)
             except Exception as e:
-                logger.error(f"Error in model {detector.model_name}: {e}")
+                logger.error(f"Error in model {key}: {e}")
         
         if not individual_results:
             raise RuntimeError("All models failed to process the image")
@@ -669,6 +1080,12 @@ class EnsembleDetector:
             is_deepfake = avg_fake_score >= threshold
             confidence = avg_fake_score
         
+        elif voting_method == 'maximum':
+            # Use prediction from model with highest confidence
+            max_confidence_result = max(individual_results, key=lambda r: r.confidence)
+            is_deepfake = max_confidence_result.is_deepfake
+            confidence = max_confidence_result.confidence
+        
         else:
             raise ValueError(f"Unknown voting method: {voting_method}")
         
@@ -695,19 +1112,19 @@ class EnsembleDetector:
             Dictionary with comparison results
         """
         results = []
-        for detector in self.detectors:
+        for key, detector in self.detectors.items():
             try:
                 result = detector.detect(image_input, threshold)
                 results.append({
-                    'model': detector.model_name,
-                    'model_key': detector.model_key,
+                    'model': result.model_name,
+                    'model_key': key,
                     'is_deepfake': result.is_deepfake,
                     'confidence': result.confidence,
                     'scores': result.scores,
                     'processing_time': result.processing_time
                 })
             except Exception as e:
-                logger.error(f"Error in model {detector.model_name}: {e}")
+                logger.error(f"Error in model {key}: {e}")
         
         return {
             'image': image_input if isinstance(image_input, str) else 'N/A',
@@ -715,5 +1132,45 @@ class EnsembleDetector:
             'model_results': results,
             'agreement': len(set(r['is_deepfake'] for r in results)) == 1
         }
+    
+    def analyze_directory(self,
+                         directory_path: str,
+                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif'],
+                         threshold: float = 0.5,
+                         voting_method: str = 'majority') -> List[EnsembleResult]:
+        """
+        Analyze all images in a directory using ensemble
+        
+        Args:
+            directory_path: Path to directory containing images
+            extensions: List of image file extensions to process
+            threshold: Threshold for deepfake classification
+            voting_method: Voting method to use
+            
+        Returns:
+            List of EnsembleResult objects
+        """
+        directory = Path(directory_path)
+        
+        if not directory.exists():
+            raise FileNotFoundError(f"Directory not found: {directory_path}")
+        
+        # Find all image files
+        image_files = []
+        for ext in extensions:
+            image_files.extend(directory.glob(f"*{ext}"))
+        
+        logger.info(f"Found {len(image_files)} image files in {directory_path}")
+        
+        results = []
+        for i, image_file in enumerate(image_files):
+            try:
+                logger.info(f"Processing {i+1}/{len(image_files)}: {image_file.name}")
+                result = self.detect(str(image_file), threshold, voting_method)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error processing {image_file.name}: {e}")
+        
+        return results
 
 
