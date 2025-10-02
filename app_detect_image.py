@@ -46,8 +46,8 @@ def process_results_example():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',
-            'deit_base'
-            #'vit_b_16'
+            'deit_base',
+            'resnet101'
         ]
     )
     
