@@ -43,14 +43,14 @@ def create_ensemble_detector():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',           
-            'nonescape-full'
-            # 'xception71',    # Excellent for deepfakes (requires timm)
+            'nonescape-full',
+            #'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
         ]
     )
 
 
-def process_image_data(image_path, ensemble, threshold=0.3, voting_method='weighted'):
+def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weighted'):
     """Process a single image and return result data
     
     Args:
@@ -135,7 +135,7 @@ def display_individual_model_results(results_data):
                       f"{fake_score:.4f} | {real_score:.4f} |")
 
 
-def calculate_and_display_metrics(results_data, voting_method='weighted', threshold=0.3):
+def calculate_and_display_metrics(results_data, voting_method='weighted', threshold=0.26):
     """Calculate and display performance metrics
     
     Args:
@@ -162,8 +162,22 @@ def calculate_and_display_metrics(results_data, voting_method='weighted', thresh
     f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
     
     print("\n\n## 📊 Performance Metrics")
-    print(f"\n**Voting Method**: `{voting_method}` (uses weighted average fake score across all models)")
-    print(f"**Threshold**: {threshold}")
+    print(f"\n**Voting Method**: `{voting_method}`")
+    
+    # Explain voting method
+    if voting_method == 'weighted' or voting_method == 'average':
+        print(f"- Uses **average fake score** across all models (avg fake score >= {threshold} → FAKE)")
+        print(f"- More robust for noisy images than simple majority voting")
+    elif voting_method == 'majority':
+        print(f"- Uses **simple majority** vote (most models agree)")
+    elif voting_method == 'confidence_weighted':
+        print(f"- Weights fake scores by each model's confidence")
+    elif voting_method == 'maximum':
+        print(f"- Uses prediction from model with highest confidence")
+    elif voting_method == 'unanimous':
+        print(f"- All models must agree")
+    
+    print(f"\n**Threshold**: {threshold}")
     print(f"\n**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
     print(f"**Precision**: {precision:.2f}% (of predicted fakes, how many are actually fake)")
     print(f"**Recall**: {recall:.2f}% (of actual fakes, how many were detected)")
@@ -192,11 +206,14 @@ def process_single_image(image_path):
         print(f"Path '{image_path}' is not a file.")
         return
     
+    threshold=0.26
+    voting_method='weighted'
+
     # Create ensemble detector
     ensemble = create_ensemble_detector()
     
     # Process the image
-    data = process_image_data(image_path, ensemble, threshold=0.3, voting_method='weighted')
+    data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
     
     if data:
         # Display results
@@ -227,12 +244,16 @@ def process_images_in_a_directory(directory_path=None):
     
     # Collect results from all images
     results_data = []
+
+    threshold=0.26
+    voting_method='weighted'
+
     
     for image_file in os.listdir(directory_path):
         image_path = os.path.join(directory_path, image_file)
         if os.path.isfile(image_path):
             # Process each image
-            data = process_image_data(image_path, ensemble, threshold=0.3, voting_method='weighted')
+            data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
             if data:
                 results_data.append(data)
         else:
@@ -240,7 +261,7 @@ def process_images_in_a_directory(directory_path=None):
     
     # Calculate and display metrics
     if results_data:
-        calculate_and_display_metrics(results_data, voting_method='weighted', threshold=0.3)
+        calculate_and_display_metrics(results_data, voting_method=voting_method, threshold=threshold)
         
         # Display results in markdown table format
         print("\n\n## 🎯 Detection Results Summary")
@@ -272,7 +293,6 @@ def main(path=None):
             print(f"\n📷 Processing single image: {path}")
             process_single_image(path)
         elif os.path.isdir(path):
-            # Directory
             print(f"\n📁 Processing directory: {path}")
             process_images_in_a_directory(path)
         else:

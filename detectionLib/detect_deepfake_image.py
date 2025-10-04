@@ -1270,10 +1270,11 @@ class EnsembleDetector:
             threshold: Threshold for each individual model
             voting_method: Voting method to use:
                 - 'majority': Simple majority vote
-                - 'weighted': Weighted by confidence
+                - 'weighted': Weighted by fake scores (uses avg fake score vs threshold)
                 - 'unanimous': All models must agree
-                - 'average': Average of fake scores
+                - 'average': Average of fake scores (RECOMMENDED for noisy images)
                 - 'maximum': Use prediction from model with highest confidence
+                - 'confidence_weighted': Weight by individual model confidence
             
         Returns:
             EnsembleResult with combined prediction
@@ -1318,11 +1319,10 @@ class EnsembleDetector:
             confidence = max(avg_fake_score, avg_real_score)
         
         elif voting_method == 'weighted':
-            # Weight votes by confidence
-            weighted_fake = sum(r.confidence for r in individual_results if r.is_deepfake)
-            weighted_real = sum(r.confidence for r in individual_results if not r.is_deepfake)
-            is_deepfake = weighted_fake > weighted_real
-            confidence = max(weighted_fake, weighted_real) / len(individual_results)
+            # Use average fake score compared to threshold
+            # This is more robust for noisy images
+            is_deepfake = avg_fake_score >= threshold
+            confidence = avg_fake_score
         
         elif voting_method == 'unanimous':
             # All models must agree
@@ -1330,7 +1330,7 @@ class EnsembleDetector:
             confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'average':
-            # Use average fake score
+            # Use average fake score (same as weighted for consistency)
             is_deepfake = avg_fake_score >= threshold
             confidence = avg_fake_score
         
@@ -1339,6 +1339,16 @@ class EnsembleDetector:
             max_confidence_result = max(individual_results, key=lambda r: r.confidence)
             is_deepfake = max_confidence_result.is_deepfake
             confidence = max_confidence_result.confidence
+        
+        elif voting_method == 'confidence_weighted':
+            # Weight fake scores by each model's confidence
+            weighted_fake_sum = sum(fake_scores[i] * individual_results[i].confidence 
+                                   for i in range(len(individual_results)))
+            total_confidence = sum(r.confidence for r in individual_results)
+            weighted_avg_fake = weighted_fake_sum / total_confidence if total_confidence > 0 else 0.0
+            
+            is_deepfake = weighted_avg_fake >= threshold
+            confidence = weighted_avg_fake
         
         else:
             raise ValueError(f"Unknown voting method: {voting_method}")
@@ -1426,5 +1436,6 @@ class EnsembleDetector:
                 logger.error(f"Error processing {image_file.name}: {e}")
         
         return results
+
 
 
