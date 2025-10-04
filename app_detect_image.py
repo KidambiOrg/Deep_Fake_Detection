@@ -43,7 +43,7 @@ def process_results_example():
     ensemble = EnsembleDetector(
         model_keys=[
             # HuggingFace models
-            #'prithiv-v1',
+            'prithiv-v1',
             'dima-vit',
             'organika-sdxl',
             # 'npr-ensemble',
