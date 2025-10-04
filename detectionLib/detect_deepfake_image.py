@@ -51,6 +51,14 @@ except ImportError:
     NONESCAPE_AVAILABLE = False
     logging.warning("Nonescape detector not available.")
 
+# Try to import UniversalFakeDetectV2 detector
+try:
+    from .detect_universal_fake_v2 import UniversalFakeDetectV2Detector
+    UNIVERSAL_FAKE_V2_AVAILABLE = True
+except ImportError:
+    UNIVERSAL_FAKE_V2_AVAILABLE = False
+    logging.warning("UniversalFakeDetectV2 detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -333,6 +341,16 @@ MODEL_REGISTRY = {
         'source': 'nonescape',
         'model_path': 'Models/nonescape-v0.safetensors',  # User must provide path to .safetensors file
         'use_mini': False,
+        'recommended_threshold': 0.5,
+    },
+    
+    # UniversalFakeDetectV2 Model
+    'universal-fake-v2': {
+        'name': 'UniversalFakeDetectV2',
+        'description': 'UniversalFakeDetectV2 - CLIP-based universal fake detector (TrueMedia)',
+        'architecture': 'CLIP + MLP',
+        'source': 'universal_fake_v2',
+        'model_path': 'pretrained_weights/continued_ft_from_concat_20240930.pth',
         'recommended_threshold': 0.5,
     },
 }
@@ -1047,6 +1065,25 @@ class EnsembleDetector:
                     self.detectors[key] = self._wrap_nonescape_detector(detector, key)
                     logger.info(f"✓ Loaded Nonescape model: {key}")
                 
+                elif config['source'] == 'universal_fake_v2':
+                    # Load UniversalFakeDetectV2 model
+                    if not UNIVERSAL_FAKE_V2_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: UniversalFakeDetectV2 detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    if model_path is None:
+                        logger.warning(f"⚠ Skipping {key}: model_path not specified in config")
+                        continue
+                    
+                    # Note: Model can load without weights (will warn), so we don't skip if file doesn't exist
+                    detector = UniversalFakeDetectV2Detector(
+                        model_path=model_path,
+                        device=str(self.device)
+                    )
+                    self.detectors[key] = self._wrap_universal_fake_v2_detector(detector, key)
+                    logger.info(f"✓ Loaded UniversalFakeDetectV2 model: {key}")
+                
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
     
@@ -1257,6 +1294,36 @@ class EnsembleDetector:
                 )
         
         return NonescapeWrapper(detector, model_key)
+    
+    def _wrap_universal_fake_v2_detector(self, detector, model_key: str):
+        """Wrap UniversalFakeDetectV2 detector to match DeepfakeImageDetector interface"""
+        class UniversalFakeV2Wrapper:
+            """Wrapper to make UniversalFakeDetectV2 detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, universal_detector, model_key):
+                self.universal_detector = universal_detector
+                self.model_key = model_key
+                self.model_name = universal_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using UniversalFakeDetectV2 model"""
+                # Convert UniversalFakeDetectV2 result to DeepfakeDetectionResult
+                ufv2_result = self.universal_detector.detect(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=ufv2_result.is_fake,
+                    confidence=ufv2_result.confidence,
+                    scores={
+                        'Real': ufv2_result.real_probability,
+                        'Fake': ufv2_result.fake_probability
+                    },
+                    processing_time=ufv2_result.processing_time,
+                    image_path=ufv2_result.image_path,
+                    model_name=self.model_name
+                )
+        
+        return UniversalFakeV2Wrapper(detector, model_key)
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],

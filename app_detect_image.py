@@ -2,7 +2,8 @@ from detectionLib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDe
 import os 
 import sys
 
-def list_available_models_example():
+
+def list_available_models_example():    
     """Example of listing all available models"""
     
     print("\n\nAvailable Models")
@@ -43,7 +44,9 @@ def create_ensemble_detector():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',           
-            'nonescape-full',
+            #'nonescape-full',
+            # UniversalFakeDetectV2 model from TrueMedia
+            'universal-fake-v2',
             #'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
         ]
