@@ -45,8 +45,7 @@ def process_results_example():
             # HuggingFace models
             'prithiv-v1',
             'dima-vit',
-            'organika-sdxl',
-            # 'npr-ensemble',
+            'organika-sdxl',           
             # 'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
         ]

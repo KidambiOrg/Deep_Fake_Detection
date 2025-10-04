@@ -21,7 +21,7 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoImageProcessor, SiglipForImageClassification, AutoModelForImageClassification
 from torchvision import models, transforms
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import logging
 import warnings
@@ -32,6 +32,8 @@ import base64
 import io
 from dataclasses import dataclass
 from pathlib import Path
+import cv2
+from scipy import ndimage
 
 # Try to import timm, but don't fail if not available
 try:
@@ -84,17 +86,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
-    },
-    'npr-ensemble': {
-        'name': 'npr-perturbation-rank',
-        'description': 'NPR (Normalized Perturbation Rank) method using image perturbations for deepfake detection',
-        'architecture': 'NPR',
-        'source': 'npr',
-        'labels': {0: 'Real', 1: 'Fake'},
-        'recommended_threshold': 0.5,  # Standard threshold for balanced detection
-        'num_perturbations': 15,  # More perturbations for better statistical reliability
-        'perturbation_strength': 0.03,  # Subtle perturbations reveal AI artifacts better
-    },
+    },   
     
     # TorchVision/Timm Models
     'efficientnet_b4': {
@@ -484,9 +476,101 @@ class DeepfakeImageDetector:
             logger.error(f"Error loading model: {str(e)}")
             raise
     
-    def preprocess_image(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes]) -> Image.Image:
+    def _detect_blur(self, image: Image.Image) -> Tuple[bool, float]:
         """
-        Preprocess image input to PIL Image format
+        Detect if image is blurred using Laplacian variance method
+        
+        Args:
+            image: PIL Image
+            
+        Returns:
+            Tuple of (is_blurred, blur_score)
+            Lower scores indicate more blur (threshold typically around 100)
+        """
+        # Convert PIL to numpy array
+        img_array = np.array(image)
+        
+        # Convert to grayscale
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
+        
+        # Compute Laplacian variance
+        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        
+        # Threshold for blur detection (lower = more blurred)
+        blur_threshold = 100.0
+        is_blurred = laplacian_var < blur_threshold
+        
+        return is_blurred, laplacian_var
+    
+    def _enhance_image(self, image: Image.Image, is_blurred: bool, blur_score: float) -> Image.Image:
+        """
+        Enhance image quality with denoising, sharpening, and contrast adjustment
+        
+        Args:
+            image: PIL Image to enhance
+            is_blurred: Whether image is detected as blurred
+            blur_score: Blur detection score
+            
+        Returns:
+            Enhanced PIL Image
+        """
+        enhanced = image.copy()
+        
+        try:
+            # Convert to numpy for OpenCV operations
+            img_array = np.array(enhanced)
+            
+            # 1. Denoise the image
+            denoised = cv2.fastNlMeansDenoisingColored(img_array, None, 10, 10, 7, 21)
+            enhanced = Image.fromarray(denoised)
+            
+            # 2. If blurred, apply sharpening
+            if is_blurred or blur_score < 150:
+                # Determine sharpening intensity based on blur level
+                if blur_score < 50:
+                    sharpness_factor = 2.5  # Heavy blur
+                elif blur_score < 100:
+                    sharpness_factor = 2.0  # Moderate blur
+                else:
+                    sharpness_factor = 1.5  # Light blur
+                
+                # Apply unsharp mask for better sharpening
+                enhanced_array = np.array(enhanced)
+                gaussian = cv2.GaussianBlur(enhanced_array, (0, 0), 2.0)
+                enhanced_array = cv2.addWeighted(enhanced_array, 1.5, gaussian, -0.5, 0)
+                enhanced = Image.fromarray(np.clip(enhanced_array, 0, 255).astype(np.uint8))
+                
+                # Additional PIL-based sharpening
+                enhancer = ImageEnhance.Sharpness(enhanced)
+                enhanced = enhancer.enhance(sharpness_factor)
+            
+            # 3. Enhance contrast
+            contrast_enhancer = ImageEnhance.Contrast(enhanced)
+            enhanced = contrast_enhancer.enhance(1.2)
+            
+            # 4. Enhance color/brightness slightly
+            color_enhancer = ImageEnhance.Color(enhanced)
+            enhanced = color_enhancer.enhance(1.1)
+            
+            # 5. Apply slight edge enhancement
+            enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
+            
+            logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
+            
+        except Exception as e:
+            logger.warning(f"Error during image enhancement: {e}. Using original image.")
+            enhanced = image
+        
+        return enhanced
+    
+    def preprocess_image(self, 
+                        image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                        apply_enhancement: bool = True) -> Image.Image:
+        """
+        Preprocess image input to PIL Image format with quality enhancement
         
         Args:
             image_input: Image as:
@@ -496,9 +580,10 @@ class DeepfakeImageDetector:
                 - Base64 encoded string (detected by 'data:image' prefix)
                 - Binary stream/file object
                 - Raw bytes
+            apply_enhancement: Whether to apply blur detection and image enhancement
             
         Returns:
-            PIL Image object
+            PIL Image object (enhanced if apply_enhancement=True)
         """
         if isinstance(image_input, str):
             # Check if it's base64 encoded image
@@ -556,6 +641,11 @@ class DeepfakeImageDetector:
         # Convert to RGB if not already
         if image.mode != 'RGB':
             image = image.convert('RGB')
+        
+        # Apply enhancement if requested
+        if apply_enhancement:
+            is_blurred, blur_score = self._detect_blur(image)
+            image = self._enhance_image(image, is_blurred, blur_score)
         
         return image
     
@@ -873,13 +963,8 @@ class EnsembleDetector:
                     # Use existing HuggingFace loading logic
                     detector = DeepfakeImageDetector(model_name=key, device=str(self.device))
                     self.detectors[key] = detector
-                    logger.info(f"✓ Loaded HuggingFace model: {key}")
-                
-                elif config['source'] == 'npr':
-                    # Load NPR detector
-                    npr_detector = self._create_npr_detector(config)
-                    self.detectors[key] = npr_detector
-                    logger.info(f"✓ Loaded NPR model: {key}")
+                    logger.info(f"✓ Loaded HuggingFace model: {key}")               
+                 
                     
                 elif config['source'] == 'torchvision':
                     # Load torchvision model
@@ -899,182 +984,7 @@ class EnsembleDetector:
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
     
-    def _create_npr_detector(self, config: Dict):
-        """Create NPR detector with improved scoring algorithm"""
-        try:
-            from scipy.ndimage import gaussian_filter
-        except ImportError:
-            logger.warning("scipy not installed. NPR model requires scipy for image perturbations.")
-            raise
-        
-        class NPRDetectorWrapper:
-            """NPR detector with optimized parameters for accurate real/fake classification"""
-            
-            def __init__(self, device, config):
-                self.device = device
-                self.model_name = config['name']
-                self.model_key = 'npr-ensemble'
-                
-                # Initialize base detector for NPR scoring
-                base_detector = DeepfakeImageDetector(model_name='prithiv-v1', device=str(device))
-                
-                # NPR configuration with optimized parameters
-                self.num_perturbations = config.get('num_perturbations', 15)
-                self.perturbation_strength = config.get('perturbation_strength', 0.03)
-                self.base_detector = base_detector
-                
-                logger.info(f"NPR detector initialized with {self.num_perturbations} perturbations, strength={self.perturbation_strength}")
-            
-            def _generate_perturbations(self, image: Image.Image) -> List[Image.Image]:
-                """Generate perturbed versions of the image"""
-                perturbations = []
-                img_array = np.array(image).astype(np.float32) / 255.0
-                
-                for i in range(self.num_perturbations):
-                    perturbed = img_array.copy()
-                    
-                    # Apply different perturbation types based on index
-                    perturbation_type = i % 5
-                    
-                    if perturbation_type == 0:
-                        # Gaussian noise
-                        noise = np.random.normal(0, self.perturbation_strength, perturbed.shape)
-                        perturbed = np.clip(perturbed + noise, 0, 1)
-                    
-                    elif perturbation_type == 1:
-                        # Gaussian blur
-                        sigma = self.perturbation_strength * 2
-                        for c in range(3):
-                            perturbed[:, :, c] = gaussian_filter(perturbed[:, :, c], sigma=sigma)
-                    
-                    elif perturbation_type == 2:
-                        # Brightness adjustment
-                        brightness_factor = 1.0 + (np.random.rand() - 0.5) * self.perturbation_strength * 2
-                        perturbed = np.clip(perturbed * brightness_factor, 0, 1)
-                    
-                    elif perturbation_type == 3:
-                        # Contrast adjustment
-                        mean_color = perturbed.mean(axis=(0, 1), keepdims=True)
-                        contrast_factor = 1.0 + (np.random.rand() - 0.5) * self.perturbation_strength * 2
-                        perturbed = np.clip(mean_color + (perturbed - mean_color) * contrast_factor, 0, 1)
-                    
-                    elif perturbation_type == 4:
-                        # Saturation adjustment
-                        gray = perturbed.mean(axis=2, keepdims=True)
-                        saturation_factor = 1.0 + (np.random.rand() - 0.5) * self.perturbation_strength * 2
-                        perturbed = np.clip(gray + (perturbed - gray) * saturation_factor, 0, 1)
-                    
-                    # Convert back to PIL Image
-                    perturbed_uint8 = (perturbed * 255).astype(np.uint8)
-                    perturbed_img = Image.fromarray(perturbed_uint8)
-                    perturbations.append(perturbed_img)
-                
-                return perturbations
-            
-            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
-                      threshold: float = 0.5) -> DeepfakeDetectionResult:
-                """Detect deepfake using simplified NPR method with robust scoring"""
-                start_time = time.time()
-                
-                # Preprocess image
-                image = self.base_detector.preprocess_image(image_input)
-                
-                # Get original prediction
-                original_result = self.base_detector.detect(image, threshold=0.5)
-                original_fake_score = original_result.scores.get('Fake', original_result.scores.get('fake', 0.0))
-                
-                # Generate perturbations
-                perturbations = self._generate_perturbations(image)
-                
-                # Get predictions for perturbations
-                perturbed_scores = []
-                for i, perturbed_img in enumerate(perturbations):
-                    try:
-                        result = self.base_detector.detect(perturbed_img, threshold=0.5)
-                        fake_score = result.scores.get('Fake', result.scores.get('fake', 0.0))
-                        perturbed_scores.append(fake_score)
-                    except Exception as e:
-                        logger.warning(f"Failed to process perturbation {i}: {e}")
-                
-                if not perturbed_scores:
-                    raise RuntimeError("Failed to process any perturbations")
-                
-                # Calculate statistics
-                perturbed_mean = np.mean(perturbed_scores)
-                perturbed_std = np.std(perturbed_scores)
-                
-                # Coefficient of variation (measures relative variability)
-                cv = perturbed_std / (abs(perturbed_mean) + 1e-6) if abs(perturbed_mean) > 1e-6 else 0
-                
-                # SIMPLIFIED NPR SCORING ALGORITHM
-                # Core principle: Use original fake score as base, adjust based on perturbation stability
-                # - AI-generated images are MORE STABLE (low CV, low std) → keep or boost score
-                # - Real images are LESS STABLE (high CV, high std) → reduce score
-                
-                final_fake_score = original_fake_score
-                
-                # Adjust based on stability metrics
-                if cv < 0.10:
-                    # Very stable (low variance) → likely AI-generated
-                    # Boost the fake score
-                    stability_boost = 1.0 + (0.10 - cv) * 1.5  # Up to 1.15x boost
-                    final_fake_score = min(final_fake_score * stability_boost, 1.0)
-                elif cv > 0.18:
-                    # Very unstable (high variance) → likely real
-                    # Reduce the fake score
-                    instability_penalty = 0.8 - (cv - 0.18) * 1.0  # Down to 0.6x
-                    instability_penalty = max(instability_penalty, 0.5)
-                    final_fake_score = final_fake_score * instability_penalty
-                
-                # Additional adjustment based on score drop consistency
-                # If perturbations consistently have lower scores, that's another AI indicator
-                score_drop = original_fake_score - perturbed_mean
-                if score_drop > 0.05 and cv < 0.15:
-                    # Consistent drop with low variance → strong AI indicator
-                    final_fake_score = min(final_fake_score * 1.1, 1.0)
-                elif score_drop < -0.05:
-                    # Scores increased under perturbation → unusual, might be real
-                    final_fake_score = final_fake_score * 0.9
-                
-                # Classification using the threshold
-                is_deepfake = final_fake_score >= threshold
-                
-                # Confidence is based on distance from threshold
-                distance_from_threshold = abs(final_fake_score - threshold)
-                confidence = min(final_fake_score if is_deepfake else (1.0 - final_fake_score), 1.0)
-                
-                processing_time = time.time() - start_time
-                
-                # Build detailed scores dictionary
-                scores = {
-                    'Fake': final_fake_score,
-                    'Real': 1.0 - final_fake_score,
-                    'Original Fake Score': original_fake_score,
-                    'Perturbed Mean': perturbed_mean,
-                    'Perturbed Std': perturbed_std,
-                    'Coefficient of Variation': cv,
-                    'Score Drop': score_drop
-                }
-                
-                image_path = image_input if isinstance(image_input, str) else None
-                
-                logger.info(f"NPR Analysis: original_fake={original_fake_score:.3f}, "
-                           f"perturbed_mean={perturbed_mean:.3f}, "
-                           f"std={perturbed_std:.3f}, cv={cv:.3f}, "
-                           f"score_drop={score_drop:.3f}")
-                logger.info(f"Final Fake Score: {final_fake_score:.3f} (threshold={threshold})")
-                logger.info(f"Classification: {'FAKE' if is_deepfake else 'REAL'} (confidence={confidence:.3f})")
-                
-                return DeepfakeDetectionResult(
-                    is_deepfake=is_deepfake,
-                    confidence=confidence,
-                    scores=scores,
-                    processing_time=processing_time,
-                    image_path=image_path,
-                    model_name='NPR-Perturbation-Rank'
-                )
-        
-        return NPRDetectorWrapper(device=self.device, config=config)
+     
     
     def _load_torchvision_model(self, config: Dict) -> torch.nn.Module:
         """Load model from torchvision"""
@@ -1137,8 +1047,58 @@ class EnsembleDetector:
                     )
                 ])
             
-            def preprocess_image(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes]) -> Image.Image:
-                """Preprocess image input to PIL Image format"""
+            def _detect_blur(self, image: Image.Image) -> Tuple[bool, float]:
+                """Detect if image is blurred using Laplacian variance method"""
+                img_array = np.array(image)
+                if len(img_array.shape) == 3:
+                    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+                else:
+                    gray = img_array
+                laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+                blur_threshold = 100.0
+                is_blurred = laplacian_var < blur_threshold
+                return is_blurred, laplacian_var
+            
+            def _enhance_image(self, image: Image.Image, is_blurred: bool, blur_score: float) -> Image.Image:
+                """Enhance image quality with denoising, sharpening, and contrast adjustment"""
+                enhanced = image.copy()
+                try:
+                    img_array = np.array(enhanced)
+                    denoised = cv2.fastNlMeansDenoisingColored(img_array, None, 10, 10, 7, 21)
+                    enhanced = Image.fromarray(denoised)
+                    
+                    if is_blurred or blur_score < 150:
+                        if blur_score < 50:
+                            sharpness_factor = 2.5
+                        elif blur_score < 100:
+                            sharpness_factor = 2.0
+                        else:
+                            sharpness_factor = 1.5
+                        
+                        enhanced_array = np.array(enhanced)
+                        gaussian = cv2.GaussianBlur(enhanced_array, (0, 0), 2.0)
+                        enhanced_array = cv2.addWeighted(enhanced_array, 1.5, gaussian, -0.5, 0)
+                        enhanced = Image.fromarray(np.clip(enhanced_array, 0, 255).astype(np.uint8))
+                        
+                        enhancer = ImageEnhance.Sharpness(enhanced)
+                        enhanced = enhancer.enhance(sharpness_factor)
+                    
+                    contrast_enhancer = ImageEnhance.Contrast(enhanced)
+                    enhanced = contrast_enhancer.enhance(1.2)
+                    color_enhancer = ImageEnhance.Color(enhanced)
+                    enhanced = color_enhancer.enhance(1.1)
+                    enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
+                    
+                    logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
+                except Exception as e:
+                    logger.warning(f"Error during image enhancement: {e}. Using original image.")
+                    enhanced = image
+                return enhanced
+            
+            def preprocess_image(self, 
+                               image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                               apply_enhancement: bool = True) -> Image.Image:
+                """Preprocess image input to PIL Image format with quality enhancement"""
                 if isinstance(image_input, str):
                     if not os.path.exists(image_input):
                         raise FileNotFoundError(f"Image file not found: {image_input}")
@@ -1156,6 +1116,11 @@ class EnsembleDetector:
                 
                 if image.mode != 'RGB':
                     image = image.convert('RGB')
+                
+                # Apply enhancement if requested
+                if apply_enhancement:
+                    is_blurred, blur_score = self._detect_blur(image)
+                    image = self._enhance_image(image, is_blurred, blur_score)
                 
                 return image
             
