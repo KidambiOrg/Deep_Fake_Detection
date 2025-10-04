@@ -44,8 +44,7 @@ def create_ensemble_detector():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',           
-            #'nonescape-full',
-            # UniversalFakeDetectV2 model from TrueMedia
+            'nonescape-full',            
             'universal-fake-v2',
             #'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
@@ -131,8 +130,39 @@ def display_individual_model_results(results_data):
             print("|-------|------------|------------|------------|------------|")
             for individual in data['individual_results']:
                 pred = 'FAKE' if individual.is_deepfake else 'REAL'
-                fake_score = individual.scores.get('Fake', individual.scores.get('fake', 0.0))
-                real_score = individual.scores.get('Real', individual.scores.get('real', 0.0))
+                
+                # Extract fake and real scores from the model's scores dictionary
+                fake_score = 0.0
+                real_score = 0.0
+                
+                # Check for various fake label formats (artificial, fake, etc.)
+                for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
+                                'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
+                                'generated', 'Generated', 'synthetic', 'Synthetic', 
+                                'AI', 'ai', 'LABEL_1', '1']:
+                    if fake_key in individual.scores:
+                        fake_score = individual.scores[fake_key]
+                        break
+                
+                # Check for various real label formats (human, real, authentic, etc.)
+                for real_key in ['human', 'Human', 'HUMAN',
+                                'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
+                                'genuine', 'Genuine', 'LABEL_0', '0']:
+                    if real_key in individual.scores:
+                        real_score = individual.scores[real_key]
+                        break
+                
+                # If still no scores found, try to infer from available scores
+                if fake_score == 0.0 and real_score == 0.0 and individual.scores:
+                    # Print debug info to help identify the issue
+                    print(f"| {individual.model_name} | DEBUG: Available labels: {list(individual.scores.keys())} |")
+                    # Try to use first two scores if available
+                    scores_list = list(individual.scores.values())
+                    if len(scores_list) >= 2:
+                        # Assume first is real, second is fake (common pattern)
+                        real_score = scores_list[0]
+                        fake_score = scores_list[1]
+                
                 print(f"| {individual.model_name} | {pred} | "
                       f"{individual.confidence:.4f} ({individual.confidence*100:.1f}%) | "
                       f"{fake_score:.4f} | {real_score:.4f} |")
@@ -210,7 +240,7 @@ def process_single_image(image_path):
         return
     
     threshold=0.26
-    voting_method='weighted'
+    voting_method='weighted'  # Changed from 'confidence_weighted' to 'weighted'
 
     # Create ensemble detector
     ensemble = create_ensemble_detector()
@@ -249,7 +279,7 @@ def process_images_in_a_directory(directory_path=None):
     results_data = []
 
     threshold=0.26
-    voting_method='weighted'
+    voting_method='weighted'  # Changed from 'confidence_weighted' to 'weighted'
 
     
     for image_file in os.listdir(directory_path):
