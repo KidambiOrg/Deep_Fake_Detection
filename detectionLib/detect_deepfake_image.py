@@ -43,6 +43,14 @@ except ImportError:
     TIMM_AVAILABLE = False
     logging.warning("timm library not available. Some models will not be accessible.")
 
+# Try to import Nonescape detector
+try:
+    from .detect_deepfake_nonescape import NonescapeDetector
+    NONESCAPE_AVAILABLE = True
+except ImportError:
+    NONESCAPE_AVAILABLE = False
+    logging.warning("Nonescape detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -305,6 +313,26 @@ MODEL_REGISTRY = {
         'model_name': 'swin_large_patch4_window7_224',
         'input_size': 224,
         'modify_classifier': True,
+        'recommended_threshold': 0.5,
+    },
+    
+    # Nonescape Models
+    'nonescape-mini': {
+        'name': 'nonescape-mini',
+        'description': 'Nonescape Mini - EfficientNet v2 (fast, lightweight)',
+        'architecture': 'EfficientNet',
+        'source': 'nonescape',
+        'model_path': 'Models/nonescape-mini-v0.safetensors',  # User must provide path to .safetensors file
+        'use_mini': True,
+        'recommended_threshold': 0.5,
+    },
+    'nonescape-full': {
+        'name': 'nonescape-full',
+        'description': 'Nonescape Full - ViT + EfficientNet (high accuracy)',
+        'architecture': 'ViT + EfficientNet',
+        'source': 'nonescape',
+        'model_path': 'Models/nonescape-v0.safetensors',  # User must provide path to .safetensors file
+        'use_mini': False,
         'recommended_threshold': 0.5,
     },
 }
@@ -981,6 +1009,44 @@ class EnsembleDetector:
                     self.detectors[key] = self._wrap_pytorch_model(model, key, config)
                     logger.info(f"✓ Loaded timm model: {key}")
                 
+                elif config['source'] == 'nonescape':
+                    # Load Nonescape model
+                    if not NONESCAPE_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: Nonescape detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    if model_path is None:
+                        logger.warning(f"⚠ Skipping {key}: model_path not specified in config")
+                        logger.info(f"   To use {key}, download the model and set model_path:")
+                        if config['use_mini']:
+                            logger.info("   wget https://nonescape.sfo2.cdn.digitaloceanspaces.com/nonescape-mini-v0.safetensors")
+                        else:
+                            logger.info("   wget https://nonescape.sfo2.cdn.digitaloceanspaces.com/nonescape-v0.safetensors")
+                        continue
+                    
+                    # Check if model file exists
+                    if not os.path.exists(model_path):
+                        logger.warning(f"⚠ Skipping {key}: Model file not found at {model_path}")
+                        logger.info(f"   To use {key}, download the model:")
+                        if config['use_mini']:
+                            logger.info("   wget https://nonescape.sfo2.cdn.digitaloceanspaces.com/nonescape-mini-v0.safetensors")
+                        else:
+                            logger.info("   wget https://nonescape.sfo2.cdn.digitaloceanspaces.com/nonescape-v0.safetensors")
+                        logger.info(f"   Then place it at: {model_path}")
+                        continue
+                    
+                    # Import NonescapeDetector here to avoid unbound error
+                    from .detect_deepfake_nonescape import NonescapeDetector as NED
+                    
+                    detector = NED(
+                        model_path=model_path,
+                        use_mini=config['use_mini'],
+                        device=str(self.device)
+                    )
+                    self.detectors[key] = self._wrap_nonescape_detector(detector, key)
+                    logger.info(f"✓ Loaded Nonescape model: {key}")
+                
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
     
@@ -1161,6 +1227,36 @@ class EnsembleDetector:
             model_key=model_key,
             model_name=config['name']
         )
+    
+    def _wrap_nonescape_detector(self, detector, model_key: str):
+        """Wrap Nonescape detector to match DeepfakeImageDetector interface"""
+        class NonescapeWrapper:
+            """Wrapper to make Nonescape detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, nonescape_detector, model_key):
+                self.nonescape_detector = nonescape_detector
+                self.model_key = model_key
+                self.model_name = nonescape_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using Nonescape model"""
+                # Convert Nonescape result to DeepfakeDetectionResult
+                nonescape_result = self.nonescape_detector.detect(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=nonescape_result.is_ai_generated,
+                    confidence=nonescape_result.confidence,
+                    scores={
+                        'Real': nonescape_result.authentic_prob,
+                        'Fake': nonescape_result.ai_prob
+                    },
+                    processing_time=nonescape_result.processing_time,
+                    image_path=nonescape_result.image_path,
+                    model_name=self.model_name
+                )
+        
+        return NonescapeWrapper(detector, model_key)
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],

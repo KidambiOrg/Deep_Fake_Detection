@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Deep Fake models director
+Models/
+
 # Distribution / packaging
 .Python
 build/

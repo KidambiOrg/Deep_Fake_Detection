@@ -46,6 +46,7 @@ def process_results_example():
             'prithiv-v1',
             'dima-vit',
             'organika-sdxl',           
+            'nonescape-full'
             # 'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
         ]
