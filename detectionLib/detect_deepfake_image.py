@@ -783,7 +783,7 @@ class DeepfakeImageDetector:
                 # Find the fake/deepfake score directly
                 fake_score = 0.0
                 fake_label = None
-                deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic']
+                deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic', 'ai']
                 
                 for label, score in scores.items():
                     label_lower = label.lower()
@@ -833,8 +833,8 @@ class DeepfakeImageDetector:
             True if deepfake, False if real
         """
         # Common patterns for deepfake labels
-        deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic']
-        real_indicators = ['real', 'authentic', 'genuine', 'human']
+        deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic', 'ai']
+        real_indicators = ['real', 'authentic', 'genuine', 'human', 'realism']
         
         label_lower = label.lower()
         
