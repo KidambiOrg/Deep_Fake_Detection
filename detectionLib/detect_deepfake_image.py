@@ -59,6 +59,14 @@ except ImportError:
     UNIVERSAL_FAKE_V2_AVAILABLE = False
     logging.warning("UniversalFakeDetectV2 detector not available.")
 
+# Try to import DistilDIRE detector
+try:
+    from .detect_deepfake_distil_dire import DistilDIREDetector
+    DISTIL_DIRE_AVAILABLE = True
+except ImportError:
+    DISTIL_DIRE_AVAILABLE = False
+    logging.warning("DistilDIRE detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -351,6 +359,64 @@ MODEL_REGISTRY = {
         'architecture': 'CLIP + MLP',
         'source': 'universal_fake_v2',
         'model_path': 'pretrained_weights/continued_ft_from_concat_20240930.pth',
+        'recommended_threshold': 0.5,
+    },
+    
+    # DistilDIRE Models
+    'distil-dire-celebahq': {
+        'name': 'DistilDIRE-CelebA-HQ',
+        'description': 'DistilDIRE trained on CelebA-HQ dataset - lightweight DIRE variant',
+        'architecture': 'ResNet50 + DDIM',
+        'source': 'distil_dire',
+        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
+        'model_type': 'distil_dire',
+        'inference_mode': 'img_only',  # TEST: Changed from 'full' to debug epsilon issues
+        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
+        'recommended_threshold': 0.5,
+    },
+    # Debug version with full mode
+    'distil-dire-celebahq-full': {
+        'name': 'DistilDIRE-CelebA-HQ-Full',
+        'description': 'DistilDIRE trained on CelebA-HQ dataset - full mode with epsilon',
+        'architecture': 'ResNet50 + DDIM',
+        'source': 'distil_dire',
+        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
+        'model_type': 'distil_dire',
+        'inference_mode': 'full',  # full, eps_only, img_only
+        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
+        'recommended_threshold': 0.5,
+    },
+    'distil-dire-imagenet': {
+        'name': 'DistilDIRE-ImageNet',
+        'description': 'DistilDIRE trained on ImageNet dataset - general purpose detection',
+        'architecture': 'ResNet50 + DDIM',
+        'source': 'distil_dire',
+        'model_path': 'Models/distil_dire/imagenet-distil-dire-11e.pth',
+        'model_type': 'distil_dire',
+        'inference_mode': 'full',
+        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
+        'recommended_threshold': 0.5,
+    },
+    'distil-dire-eps-celebahq': {
+        'name': 'DistilDIRE-EPS-CelebA-HQ',
+        'description': 'DistilDIRE using only epsilon (noise) - CelebA-HQ variant (fastest)',
+        'architecture': 'ResNet50 (EPS only)',
+        'source': 'distil_dire',
+        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
+        'model_type': 'distil_dire',
+        'inference_mode': 'eps_only',
+        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
+        'recommended_threshold': 0.5,
+    },
+    'distil-dire-eps-imagenet': {
+        'name': 'DistilDIRE-EPS-ImageNet',
+        'description': 'DistilDIRE using only epsilon (noise) - ImageNet variant (fastest)',
+        'architecture': 'ResNet50 (EPS only)',
+        'source': 'distil_dire',
+        'model_path': 'Models/distil_dire/imagenet-distil-dire-11e.pth',
+        'model_type': 'distil_dire',
+        'inference_mode': 'eps_only',
+        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
         'recommended_threshold': 0.5,
     },
 }
@@ -898,7 +964,7 @@ class DeepfakeImageDetector:
     
     def analyze_directory(self, 
                          directory_path: str,
-                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif'],
+                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif'],
                          threshold: float = 0.6) -> List[DeepfakeDetectionResult]:
         """
         Analyze all images in a directory for deepfakes
@@ -1083,6 +1149,43 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_universal_fake_v2_detector(detector, key)
                     logger.info(f"✓ Loaded UniversalFakeDetectV2 model: {key}")
+                
+                elif config['source'] == 'distil_dire':
+                    # Load DistilDIRE model
+                    if not DISTIL_DIRE_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: DistilDIRE detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    model_type = config.get('model_type', 'distil_dire')
+                    inference_mode = config.get('inference_mode', 'full')
+                    adm_model_path = config.get('adm_model_path')
+                    
+                    if model_path is None:
+                        logger.warning(f"⚠ Skipping {key}: model_path not specified in config")
+                        continue
+                    
+                    # Check if model file exists
+                    if not os.path.exists(model_path):
+                        logger.warning(f"⚠ Skipping {key}: Model file not found at {model_path}")
+                        logger.info(f"   To use {key}, download the model using Scripts/download_distil_dire_models.py")
+                        continue
+                    
+                    # Check ADM model if needed
+                    if inference_mode in ['full', 'eps_only'] and adm_model_path:
+                        if not os.path.exists(adm_model_path):
+                            logger.warning(f"⚠ ADM model not found at {adm_model_path}, will use simplified version")
+                            adm_model_path = None
+                    
+                    detector = DistilDIREDetector(
+                        model_path=model_path,
+                        model_type=model_type,
+                        inference_mode=inference_mode,
+                        adm_model_path=adm_model_path,
+                        device=str(self.device)
+                    )
+                    self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
+                    logger.info(f"✓ Loaded DistilDIRE model: {key}")
                 
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1325,6 +1428,36 @@ class EnsembleDetector:
         
         return UniversalFakeV2Wrapper(detector, model_key)
     
+    def _wrap_distil_dire_detector(self, detector, model_key: str):
+        """Wrap DistilDIRE detector to match DeepfakeImageDetector interface"""
+        class DistilDIREWrapper:
+            """Wrapper to make DistilDIRE detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, distil_dire_detector, model_key):
+                self.distil_dire_detector = distil_dire_detector
+                self.model_key = model_key
+                self.model_name = distil_dire_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using DistilDIRE model"""
+                # Convert DistilDIRE result to DeepfakeDetectionResult
+                distil_dire_result = self.distil_dire_detector.detect(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=distil_dire_result.is_deepfake,
+                    confidence=distil_dire_result.confidence,
+                    scores={
+                        'Real': 1.0 - distil_dire_result.fake_probability,
+                        'Fake': distil_dire_result.fake_probability
+                    },
+                    processing_time=distil_dire_result.processing_time,
+                    image_path=distil_dire_result.image_path,
+                    model_name=self.model_name
+                )
+        
+        return DistilDIREWrapper(detector, model_key)
+    
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
                threshold: float = 0.5,
@@ -1466,7 +1599,7 @@ class EnsembleDetector:
     
     def analyze_directory(self,
                          directory_path: str,
-                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif'],
+                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif'],
                          threshold: float = 0.5,
                          voting_method: str = 'majority') -> List[EnsembleResult]:
         """

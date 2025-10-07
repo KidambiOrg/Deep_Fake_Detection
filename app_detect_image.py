@@ -46,6 +46,9 @@ def create_ensemble_detector():
             'organika-sdxl',           
             'nonescape-full',            
             'universal-fake-v2',
+            # DistilDIRE models (lightweight and efficient)
+            'distil-dire-celebahq',     # Good for face/portrait images
+            #'distil-dire-eps-imagenet', # Fast general-purpose detection
             #'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
         ]
