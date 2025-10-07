@@ -34,23 +34,34 @@ def list_available_models_example():
     for key, info in models.items():
         if info.get('source') == 'timm':
             print(f"| {key} | {info['name']} | {info['architecture']} | {info['description']} |")
+    
+    print("\n### SEResNet-50 Models\n")
+    print("| Key | Name | Architecture | Description |")
+    print("|-----|------|--------------|-------------|")
+    
+    for key, info in models.items():
+        if info.get('source') == 'seresnet50':
+            print(f"| {key} | {info['name']} | {info['architecture']} | {info['description']} |")
 
 
 def create_ensemble_detector():
     """Create and return an ensemble detector with configured models"""
     return EnsembleDetector(
         model_keys=[
-            # HuggingFace models
-            'prithiv-v1',
-            'dima-vit',
-            'organika-sdxl',           
+            # # HuggingFace models
+             'prithiv-v1',
+             'dima-vit',
+             'organika-sdxl',           
             'nonescape-full',            
-            'universal-fake-v2',
-            # DistilDIRE models (lightweight and efficient)
-            'distil-dire-celebahq',     # Good for face/portrait images
-            #'distil-dire-eps-imagenet', # Fast general-purpose detection
-            #'xception71',    # Excellent for deepfakes (requires timm)
-            # 'efficientnet_b7', # High accuracy (slower)
+             'universal-fake-v2',
+            # # DistilDIRE models (lightweight and efficient)
+             'distil-dire-celebahq',     # Good for face/portrait images
+            # #'distil-dire-eps-imagenet', # Fast general-purpose detection
+            # # SEResNet-50 models (excellent architecture for deepfake detection)
+            'seresnet50-pretrained',    # Uses pretrained model from torch.hub
+            # #'seresnet50',              # Fine-tuned model (if available)
+            # #'xception71',    # Excellent for deepfakes (requires timm)
+            # # 'efficientnet_b7', # High accuracy (slower)
         ]
     )
 

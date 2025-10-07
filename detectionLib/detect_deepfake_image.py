@@ -67,6 +67,14 @@ except ImportError:
     DISTIL_DIRE_AVAILABLE = False
     logging.warning("DistilDIRE detector not available.")
 
+# Try to import SEResNet-50 detector
+try:
+    from .detect_deepfake_seresnet50 import SEResNet50Detector
+    SERESNET50_AVAILABLE = True
+except ImportError:
+    SERESNET50_AVAILABLE = False
+    logging.warning("SEResNet-50 detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -418,6 +426,26 @@ MODEL_REGISTRY = {
         'inference_mode': 'eps_only',
         'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
         'recommended_threshold': 0.5,
+    },
+    
+    # SEResNet-50 Models
+    'seresnet50': {
+        'name': 'SEResNet-50',
+        'description': 'SEResNet-50 with Squeeze-and-Excitation blocks (excellent for deepfake detection)',
+        'architecture': 'SEResNet-50',
+        'source': 'seresnet50',
+        'model_path': 'Models/SERESNet_50/seresnet50_complete_model.pth',  # Path to fine-tuned model
+        'input_size': 224,
+        'recommended_threshold': 0.6,  # Higher threshold for fine-tuned model
+    },
+    'seresnet50-pretrained': {
+        'name': 'SEResNet-50-Pretrained',
+        'description': 'SEResNet-50 pretrained on ImageNet (adapted for deepfake detection)',
+        'architecture': 'SEResNet-50',
+        'source': 'seresnet50',
+        'model_path': None,  # Will load from downloaded weights
+        'input_size': 224,
+        'recommended_threshold': 0.35,  # Optimal threshold based on score distribution analysis
     },
 }
 
@@ -1187,6 +1215,30 @@ class EnsembleDetector:
                     self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
                     logger.info(f"✓ Loaded DistilDIRE model: {key}")
                 
+                elif config['source'] == 'seresnet50':
+                    # Load SEResNet-50 model
+                    if not SERESNET50_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: SEResNet-50 detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    input_size = config.get('input_size', 224)
+                    threshold = config.get('recommended_threshold', 0.5)
+                    
+                    # Check if model file exists (for fine-tuned models)
+                    if model_path and not os.path.exists(model_path):
+                        logger.warning(f"⚠ SEResNet-50 model not found at {model_path}, will use pretrained model from torch.hub")
+                        model_path = None
+                    
+                    detector = SEResNet50Detector(
+                        model_path=model_path,
+                        device=str(self.device),
+                        threshold=threshold,
+                        input_size=input_size
+                    )
+                    self.detectors[key] = self._wrap_seresnet50_detector(detector, key)
+                    logger.info(f"✓ Loaded SEResNet-50 model: {key}")
+                    
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
     
@@ -1458,6 +1510,36 @@ class EnsembleDetector:
         
         return DistilDIREWrapper(detector, model_key)
     
+    def _wrap_seresnet50_detector(self, detector, model_key: str):
+        """Wrap SEResNet-50 detector to match DeepfakeImageDetector interface"""
+        class SEResNet50Wrapper:
+            """Wrapper to make SEResNet-50 detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, seresnet50_detector, model_key):
+                self.seresnet50_detector = seresnet50_detector
+                self.model_key = model_key
+                self.model_name = seresnet50_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using SEResNet-50 model"""
+                # Convert SEResNet-50 result to DeepfakeDetectionResult
+                seresnet50_result = self.seresnet50_detector.detect_single(image_input, use_ensemble=False)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=seresnet50_result.is_fake,
+                    confidence=seresnet50_result.confidence,
+                    scores={
+                        'Real': seresnet50_result.real_probability,
+                        'Fake': seresnet50_result.fake_probability
+                    },
+                    processing_time=seresnet50_result.processing_time,
+                    image_path=image_input if isinstance(image_input, str) else None,
+                    model_name=self.model_name
+                )
+        
+        return SEResNet50Wrapper(detector, model_key)
+    
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
                threshold: float = 0.5,
@@ -1479,11 +1561,15 @@ class EnsembleDetector:
         Returns:
             EnsembleResult with combined prediction
         """
-        # Get predictions from all models
+        # Get predictions from all models using their recommended thresholds
         individual_results = []
         for key, detector in self.detectors.items():
             try:
-                result = detector.detect(image_input, threshold)
+                # Use model-specific recommended threshold if available
+                model_info = MODEL_REGISTRY.get(key, {})
+                model_threshold = model_info.get('recommended_threshold', threshold)
+                
+                result = detector.detect(image_input, model_threshold)
                 individual_results.append(result)
             except Exception as e:
                 logger.error(f"Error in model {key}: {e}")
