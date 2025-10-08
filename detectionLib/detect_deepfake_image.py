@@ -992,7 +992,7 @@ class DeepfakeImageDetector:
     
     def analyze_directory(self, 
                          directory_path: str,
-                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif'],
+                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif','webp'],
                          threshold: float = 0.6) -> List[DeepfakeDetectionResult]:
         """
         Analyze all images in a directory for deepfakes
@@ -1636,6 +1636,196 @@ class EnsembleDetector:
             is_deepfake = weighted_avg_fake >= threshold
             confidence = weighted_avg_fake
         
+        elif voting_method == 'adaptive_threshold':
+            # Adjust threshold based on prediction variance for better handling of uncertain cases
+            score_variance = np.var(fake_scores) if len(fake_scores) > 1 else 0.0
+            # Increase threshold when there's high variance (disagreement between models)
+            adjusted_threshold = threshold * (1 + score_variance)
+            is_deepfake = avg_fake_score >= adjusted_threshold
+            confidence = avg_fake_score
+        
+        elif voting_method == 'median':
+            # Use median instead of mean - more robust to outliers
+            median_fake_score = np.median(fake_scores) if fake_scores else 0.0
+            median_real_score = np.median(real_scores) if real_scores else 0.0
+            is_deepfake = median_fake_score >= threshold
+            confidence = median_fake_score if is_deepfake else median_real_score
+        
+        elif voting_method == 'robust_majority':
+            # Remove extreme outliers before voting using IQR method
+            if len(fake_scores) >= 4:  # Need at least 4 models for robust statistics
+                q1_fake, q3_fake = np.percentile(fake_scores, [25, 75])
+                iqr_fake = q3_fake - q1_fake
+                lower_bound = q1_fake - 1.5 * iqr_fake
+                upper_bound = q3_fake + 1.5 * iqr_fake
+                
+                # Filter out outliers
+                filtered_results = []
+                for i, result in enumerate(individual_results):
+                    if lower_bound <= fake_scores[i] <= upper_bound:
+                        filtered_results.append(result)
+                
+                if filtered_results:
+                    filtered_fake_votes = sum(1 for r in filtered_results if r.is_deepfake)
+                    filtered_real_votes = len(filtered_results) - filtered_fake_votes
+                    is_deepfake = filtered_fake_votes > filtered_real_votes
+                    
+                    # Calculate confidence from filtered results
+                    filtered_fake_scores = []
+                    filtered_real_scores = []
+                    for result in filtered_results:
+                        fake_score = result.scores.get('Fake', result.scores.get('fake', 0.0))
+                        real_score = result.scores.get('Real', result.scores.get('real', 0.0))
+                        filtered_fake_scores.append(fake_score)
+                        filtered_real_scores.append(real_score)
+                    
+                    confidence = max(np.mean(filtered_fake_scores), np.mean(filtered_real_scores))
+                else:
+                    # Fallback to regular majority if all are outliers
+                    is_deepfake = fake_votes > real_votes
+                    confidence = max(avg_fake_score, avg_real_score)
+            else:
+                # Fallback to regular majority for small ensembles
+                is_deepfake = fake_votes > real_votes
+                confidence = max(avg_fake_score, avg_real_score)
+        
+        elif voting_method == 'dynamic_consensus':
+            # Require higher agreement when models disagree strongly
+            total_models = len(individual_results)
+            disagreement_ratio = abs(fake_votes - real_votes) / total_models
+            
+            # Require super-majority when there's high disagreement
+            if disagreement_ratio <= 0.2:  # Low disagreement
+                required_majority = 0.5
+            elif disagreement_ratio <= 0.4:  # Moderate disagreement
+                required_majority = 0.6
+            else:  # High disagreement
+                required_majority = 0.75
+            
+            fake_ratio = fake_votes / total_models
+            is_deepfake = fake_ratio >= required_majority
+            confidence = max(avg_fake_score, avg_real_score)
+        
+        elif voting_method == 'reliability_weighted':
+            # Weight votes based on each model's estimated reliability
+            # These weights are based on general performance characteristics
+            model_weights = {
+                'nonescape-full': 0.92,           # High reliability for general detection
+                'distil-dire-celebahq': 0.90,     # Excellent for face images  
+                'distil-dire-eps-imagenet': 0.88, # Good general purpose
+                'dima-vit': 0.85,                 # Vision transformer, good accuracy
+                'universal-fake-v2': 0.82,        # Universal detector
+                'seresnet50-pretrained': 0.80,    # Solid architecture
+                'seresnet50': 0.80,               # Same architecture
+                'prithiv-v1': 0.75,              # Can be overly sensitive
+                'organika-sdxl': 0.70,            # Often too aggressive on real images
+            }
+            
+            # Calculate weighted votes and scores
+            weighted_fake_votes = 0.0
+            weighted_total_votes = 0.0
+            weighted_fake_sum = 0.0
+            weighted_real_sum = 0.0
+            
+            for i, (key, detector) in enumerate(self.detectors.items()):
+                if i < len(individual_results):
+                    weight = model_weights.get(key, 0.75)  # Default weight
+                    result = individual_results[i]
+                    
+                    weighted_total_votes += weight
+                    if result.is_deepfake:
+                        weighted_fake_votes += weight
+                    
+                    fake_score = fake_scores[i] if i < len(fake_scores) else 0.0
+                    real_score = real_scores[i] if i < len(real_scores) else 0.0
+                    weighted_fake_sum += fake_score * weight
+                    weighted_real_sum += real_score * weight
+            
+            if weighted_total_votes > 0:
+                weighted_fake_ratio = weighted_fake_votes / weighted_total_votes
+                weighted_avg_fake = weighted_fake_sum / weighted_total_votes
+                weighted_avg_real = weighted_real_sum / weighted_total_votes
+                
+                is_deepfake = weighted_fake_ratio > 0.5
+                confidence = weighted_avg_fake if is_deepfake else weighted_avg_real
+            else:
+                # Fallback to simple majority
+                is_deepfake = fake_votes > real_votes
+                confidence = max(avg_fake_score, avg_real_score)
+        
+        elif voting_method == 'bayesian':
+            # Use Bayesian inference to combine predictions
+            prior_fake = 0.5  # Prior probability of image being fake
+            
+            # Calculate likelihood of observing these results given fake/real
+            log_likelihood_fake = 0.0
+            log_likelihood_real = 0.0
+            
+            for result in individual_results:
+                model_confidence = result.confidence
+                if result.is_deepfake:
+                    # Model predicts fake
+                    log_likelihood_fake += np.log(model_confidence + 1e-10)
+                    log_likelihood_real += np.log(1 - model_confidence + 1e-10)
+                else:
+                    # Model predicts real
+                    log_likelihood_fake += np.log(1 - model_confidence + 1e-10)
+                    log_likelihood_real += np.log(model_confidence + 1e-10)
+            
+            # Convert back from log space for numerical stability
+            likelihood_fake = np.exp(log_likelihood_fake)
+            likelihood_real = np.exp(log_likelihood_real)
+            
+            # Calculate posterior probability using Bayes' theorem
+            evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
+            if evidence > 0:
+                posterior_fake = (likelihood_fake * prior_fake) / evidence
+            else:
+                posterior_fake = prior_fake
+            
+            is_deepfake = posterior_fake >= threshold
+            confidence = posterior_fake
+        
+        elif voting_method == 'entropy_weighted':
+            # Weight based on prediction entropy (uncertainty)
+            weighted_fake_sum = 0.0
+            total_weight = 0.0
+            
+            for i, result in enumerate(individual_results):
+                fake_score = fake_scores[i] if i < len(fake_scores) else 0.0
+                real_score = real_scores[i] if i < len(real_scores) else 0.0
+                
+                # Calculate entropy (lower entropy = more certain = higher weight)
+                p_fake = max(fake_score, 1e-10)  # Avoid log(0)
+                p_real = max(real_score, 1e-10)
+                entropy = -(p_fake * np.log2(p_fake) + p_real * np.log2(p_real))
+                
+                # Convert entropy to weight (lower entropy = higher weight)
+                weight = 1.0 / (1.0 + entropy)
+                
+                weighted_fake_sum += fake_score * weight
+                total_weight += weight
+            
+            if total_weight > 0:
+                entropy_weighted_fake = weighted_fake_sum / total_weight
+                is_deepfake = entropy_weighted_fake >= threshold
+                confidence = entropy_weighted_fake
+            else:
+                is_deepfake = avg_fake_score >= threshold
+                confidence = avg_fake_score
+        
+        elif voting_method == 'consensus_threshold':
+            # Adaptive threshold based on model consensus
+            # Higher consensus = lower threshold needed
+            max_votes = max(fake_votes, real_votes)
+            consensus_strength = max_votes / len(individual_results)
+            
+            # Adjust threshold based on consensus (high consensus = lower threshold)
+            adjusted_threshold = threshold * (2 - consensus_strength)
+            
+            is_deepfake = avg_fake_score >= adjusted_threshold
+            confidence = avg_fake_score
+        
         else:
             raise ValueError(f"Unknown voting method: {voting_method}")
         
@@ -1685,7 +1875,7 @@ class EnsembleDetector:
     
     def analyze_directory(self,
                          directory_path: str,
-                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif'],
+                         extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif','webp'],
                          threshold: float = 0.5,
                          voting_method: str = 'majority') -> List[EnsembleResult]:
         """

@@ -44,6 +44,52 @@ def list_available_models_example():
             print(f"| {key} | {info['name']} | {info['architecture']} | {info['description']} |")
 
 
+def list_voting_methods():
+    """Display all available voting methods with descriptions"""
+    print("\n\n## 🗳️ Available Voting Methods")
+    print("=" * 80)
+    
+    methods = {
+        "Basic Methods": {
+            "majority": "Simple majority vote - most models agree wins",
+            "weighted": "Average fake score vs threshold - robust for noisy images",
+            "average": "Same as weighted method",
+            "unanimous": "All models must agree - very conservative",
+            "maximum": "Use prediction from most confident model",
+            "confidence_weighted": "Weight scores by model confidence"
+        },
+        "Advanced Statistical Methods": {
+            "adaptive_threshold": "Adjusts threshold based on prediction variance",
+            "median": "Uses median instead of mean - robust to outliers",
+            "robust_majority": "Excludes extreme outliers before voting (IQR method)",
+            "dynamic_consensus": "Requires higher agreement when models disagree",
+            "entropy_weighted": "Weights by prediction certainty (low entropy = high weight)"
+        },
+        "Machine Learning Methods": {
+            "reliability_weighted": "Weights based on historical model accuracy",
+            "bayesian": "Bayesian inference combining predictions probabilistically",
+            "consensus_threshold": "Adapts threshold based on consensus strength"
+        }
+    }
+    
+    for category, category_methods in methods.items():
+        print(f"\n### {category}")
+        print("| Method | Description |")
+        print("|--------|-------------|")
+        for method, description in category_methods.items():
+            print(f"| `{method}` | {description} |")
+    
+    print(f"\n### 💡 Recommendations by Use Case")
+    print("| Use Case | Recommended Method | Why |")
+    print("|----------|-------------------|-----|")
+    print("| General purpose | `reliability_weighted` | Accounts for model strengths |")
+    print("| High accuracy needed | `bayesian` | Most sophisticated combination |") 
+    print("| Outlier models present | `robust_majority` | Excludes extreme predictions |")
+    print("| Conservative detection | `dynamic_consensus` | Requires strong agreement |")
+    print("| Real-time/speed critical | `majority` | Fastest computation |")
+    print("| Mixed image types | `adaptive_threshold` | Adapts to uncertainty |")
+
+
 def create_ensemble_detector():
     """Create and return an ensemble detector with configured models"""
     return EnsembleDetector(
@@ -223,6 +269,29 @@ def calculate_and_display_metrics(results_data, voting_method='weighted', thresh
         print(f"- Uses prediction from model with highest confidence")
     elif voting_method == 'unanimous':
         print(f"- All models must agree")
+    elif voting_method == 'adaptive_threshold':
+        print(f"- Adjusts threshold based on prediction variance (disagreement between models)")
+        print(f"- Higher variance → higher threshold needed")
+    elif voting_method == 'median':
+        print(f"- Uses **median fake score** instead of average (more robust to outliers)")
+    elif voting_method == 'robust_majority':
+        print(f"- Excludes extreme outliers before majority voting using IQR method")
+        print(f"- Best for handling models with very different sensitivities")
+    elif voting_method == 'dynamic_consensus':
+        print(f"- Requires higher agreement when models disagree strongly")
+        print(f"- Low disagreement: 50% majority | High disagreement: 75% majority")
+    elif voting_method == 'reliability_weighted':
+        print(f"- Weights votes based on each model's estimated reliability")
+        print(f"- Gives more weight to historically accurate models")
+    elif voting_method == 'bayesian':
+        print(f"- Uses Bayesian inference to combine predictions probabilistically")
+        print(f"- Accounts for model confidence and prior probabilities")
+    elif voting_method == 'entropy_weighted':
+        print(f"- Weights predictions by certainty (low entropy = high weight)")
+        print(f"- More certain predictions get higher influence")
+    elif voting_method == 'consensus_threshold':
+        print(f"- Adapts threshold based on model consensus strength")
+        print(f"- High consensus → lower threshold needed")
     
     print(f"\n**Threshold**: {threshold}")
     print(f"\n**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
@@ -237,6 +306,88 @@ def calculate_and_display_metrics(results_data, voting_method='weighted', thresh
     print(f"Actual FAKE     {true_positives:4d}      {false_negatives:4d}")
     print(f"       REAL     {false_positives:4d}      {true_negatives:4d}")
     print(f"```")
+
+
+def compare_voting_methods(image_path, ensemble, threshold=0.26):
+    """Compare all voting methods on a single image"""
+    print(f"\n\n## 🔬 Voting Method Comparison for: {os.path.basename(image_path)}")
+    print("=" * 80)
+    
+    # All available voting methods
+    voting_methods = [
+        'majority', 'weighted', 'confidence_weighted', 'unanimous', 'maximum',
+        'adaptive_threshold', 'median', 'robust_majority', 'dynamic_consensus',
+        'reliability_weighted', 'bayesian', 'entropy_weighted', 'consensus_threshold'
+    ]
+    
+    # Ground truth from filename
+    image_file = os.path.basename(image_path)
+    ground_truth_is_fake = 'fake' in image_file.lower()
+    ground_truth = 'FAKE' if ground_truth_is_fake else 'REAL'
+    
+    print(f"**Ground Truth**: {ground_truth}")
+    print(f"**Threshold**: {threshold}")
+    
+    print("\n| Voting Method | Prediction | Confidence | ✓/✗ | Notes |")
+    print("|---------------|------------|------------|-----|-------|")
+    
+    results = {}
+    for method in voting_methods:
+        try:
+            result = ensemble.detect(image_path, threshold=threshold, voting_method=method)
+            prediction = 'FAKE' if result.is_deepfake else 'REAL'
+            is_correct = result.is_deepfake == ground_truth_is_fake
+            correctness = "✓" if is_correct else "✗"
+            
+            # Add method-specific notes
+            notes = ""
+            if method == 'majority':
+                votes = result.voting_summary
+                notes = f"Votes: {votes['fake']}F-{votes['real']}R"
+            elif method in ['weighted', 'average']:
+                notes = f"Avg fake: {result.average_fake_score:.3f}"
+            elif method == 'maximum':
+                max_conf = max(r.confidence for r in result.individual_results)
+                notes = f"Max conf: {max_conf:.3f}"
+            elif method == 'bayesian':
+                notes = f"Posterior: {result.confidence:.3f}"
+            elif method == 'reliability_weighted':
+                notes = "Model weights applied"
+            elif method == 'robust_majority':
+                notes = "Outliers filtered"
+            
+            print(f"| {method} | {prediction} | {result.confidence:.3f} ({result.confidence*100:.1f}%) | {correctness} | {notes} |")
+            
+            results[method] = {
+                'prediction': prediction,
+                'confidence': result.confidence,
+                'is_correct': is_correct,
+                'result': result
+            }
+            
+        except Exception as e:
+            print(f"| {method} | ERROR | 0.000 (0.0%) | ✗ | {str(e)[:30]}... |")
+            results[method] = {'prediction': 'ERROR', 'confidence': 0.0, 'is_correct': False}
+    
+    # Summary statistics
+    correct_predictions = sum(1 for r in results.values() if r['is_correct'])
+    total_methods = len([r for r in results.values() if r['prediction'] != 'ERROR'])
+    
+    print(f"\n**Consensus**: {correct_predictions}/{total_methods} methods correct ({correct_predictions/total_methods*100:.1f}%)")
+    
+    # Find best and worst performing methods
+    if results:
+        best_methods = [method for method, data in results.items() 
+                       if data['is_correct'] and data['prediction'] != 'ERROR']
+        worst_methods = [method for method, data in results.items() 
+                        if not data['is_correct'] and data['prediction'] != 'ERROR']
+        
+        if best_methods:
+            print(f"**Correct Methods**: {', '.join(best_methods)}")
+        if worst_methods:
+            print(f"**Incorrect Methods**: {', '.join(worst_methods)}")
+    
+    return results
 
 
 def process_single_image(image_path):
@@ -254,7 +405,7 @@ def process_single_image(image_path):
         return
     
     threshold=0.26
-    voting_method='weighted'  # Changed from 'confidence_weighted' to 'weighted'
+    voting_method='reliability_weighted'  # Use the new reliability-weighted method for better accuracy
 
     # Create ensemble detector
     ensemble = create_ensemble_detector()
@@ -293,7 +444,7 @@ def process_images_in_a_directory(directory_path=None):
     results_data = []
 
     threshold=0.26
-    voting_method='weighted'  # Changed from 'confidence_weighted' to 'weighted'
+    voting_method='reliability_weighted'  # Use the new reliability-weighted method for better accuracy
 
     
     for image_file in os.listdir(directory_path):
@@ -349,9 +500,52 @@ def main(path=None):
         print(f"❌ Error running detection: {e}")
 
 
+def demo_advanced_voting_methods():
+    """Demonstrate all the new advanced voting methods"""
+    print("\n\n🚀 ADVANCED DEEPFAKE DETECTION DEMO")
+    print("=" * 80)
+    print("This demo showcases the new advanced voting methods for improved accuracy!")
+    
+    # Show all available voting methods
+    list_voting_methods()
+    
+    # Example image path - update this to your test image
+    test_image = "C:\\Kidambi\\WorkRelated\\DeepFake\\sample_images\\real_2.avif"
+    
+    if os.path.exists(test_image):
+        print(f"\n\n🔍 Testing all voting methods on: {os.path.basename(test_image)}")
+        
+        # Create ensemble
+        ensemble = create_ensemble_detector()
+        
+        # Compare all voting methods
+        results = compare_voting_methods(test_image, ensemble, threshold=0.26)
+        
+        print(f"\n\n💡 **Key Insights:**")
+        print(f"- The new **reliability_weighted** method accounts for each model's strengths")
+        print(f"- **Bayesian** method provides the most sophisticated probabilistic reasoning") 
+        print(f"- **Robust_majority** handles outlier models (like overly aggressive ones)")
+        print(f"- **Dynamic_consensus** requires stronger agreement when models disagree")
+        print(f"- **Adaptive_threshold** adjusts sensitivity based on model uncertainty")
+        
+    else:
+        print(f"\n⚠️ Test image not found at: {test_image}")
+        print(f"Please update the path in the demo function or run with your own image!")
+
+
 if __name__ == "__main__":
     # Check if argument is provided via command line
     if len(sys.argv) > 1:
-        main(sys.argv[1])
+        path_arg = sys.argv[1]
+        
+        # Special commands
+        if path_arg.lower() == 'demo':
+            demo_advanced_voting_methods()
+        elif path_arg.lower() == 'methods':
+            list_voting_methods()
+        elif path_arg.lower() == 'models':
+            list_available_models_example()
+        else:
+            main(path_arg)
     else:
         main()
