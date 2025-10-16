@@ -405,7 +405,7 @@ def process_single_image(image_path):
         return
     
     threshold=0.26
-    voting_method='reliability_weighted'  # Use the new reliability-weighted method for better accuracy
+    voting_method='weighted'  # Use the new reliability-weighted method for better accuracy
 
     # Create ensemble detector
     ensemble = create_ensemble_detector()
@@ -444,7 +444,7 @@ def process_images_in_a_directory(directory_path=None):
     results_data = []
 
     threshold=0.26
-    voting_method='reliability_weighted'  # Use the new reliability-weighted method for better accuracy
+    voting_method='weighted'  # Use the new reliability-weighted method for better accuracy
 
     
     for image_file in os.listdir(directory_path):
