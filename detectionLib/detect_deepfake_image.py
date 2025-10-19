@@ -1606,25 +1606,58 @@ class EnsembleDetector:
         # Determine final prediction based on voting method
         if voting_method == 'majority':
             is_deepfake = fake_votes > real_votes
-            confidence = avg_fake_score if is_deepfake else avg_real_score
+            
+            # Calculate confidence based on models that agree with the final prediction
+            # This better represents the ensemble's certainty
+            if is_deepfake:
+                # Get scores from models that predicted FAKE
+                fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
+                                    if individual_results[i].is_deepfake]
+                confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
+            else:
+                # Get scores from models that predicted REAL
+                real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
+                                    if not individual_results[i].is_deepfake]
+                confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
         
         elif voting_method == 'weighted':
             # Use average fake score compared to threshold
             # This is more robust for noisy images
             is_deepfake = avg_fake_score >= threshold
-            # Confidence should represent certainty in the final prediction
-            confidence = avg_fake_score if is_deepfake else avg_real_score
+            
+            # Calculate confidence based on models that agree with the final prediction
+            # This better represents the ensemble's certainty
+            if is_deepfake:
+                # Get scores from models that predicted FAKE
+                fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
+                                    if individual_results[i].is_deepfake]
+                confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
+            else:
+                # Get scores from models that predicted REAL
+                real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
+                                    if not individual_results[i].is_deepfake]
+                confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
         
         elif voting_method == 'unanimous':
             # All models must agree
             is_deepfake = fake_votes == len(individual_results)
+            
+            # For unanimous, use average of all scores since all should agree
             confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'average':
             # Use average fake score (same as weighted for consistency)
             is_deepfake = avg_fake_score >= threshold
-            # Confidence should represent certainty in the final prediction
-            confidence = avg_fake_score if is_deepfake else avg_real_score
+            
+            # Calculate confidence based on models that agree with the final prediction
+            if is_deepfake:
+                fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
+                                    if individual_results[i].is_deepfake]
+                confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
+            else:
+                real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
+                                    if not individual_results[i].is_deepfake]
+                confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
         
         elif voting_method == 'maximum':
             # Use prediction from model with highest confidence
@@ -1648,8 +1681,16 @@ class EnsembleDetector:
             # Increase threshold when there's high variance (disagreement between models)
             adjusted_threshold = threshold * (1 + score_variance)
             is_deepfake = avg_fake_score >= adjusted_threshold
-            # Confidence should represent certainty in the final prediction
-            confidence = avg_fake_score if is_deepfake else avg_real_score
+            
+            # Calculate confidence based on models that agree with the final prediction
+            if is_deepfake:
+                fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
+                                    if individual_results[i].is_deepfake]
+                confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
+            else:
+                real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
+                                    if not individual_results[i].is_deepfake]
+                confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
         
         elif voting_method == 'median':
             # Use median instead of mean - more robust to outliers

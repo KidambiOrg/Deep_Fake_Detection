@@ -473,7 +473,10 @@ class SEResNet50Detector:
                 real_prob = float(avg_probs[0])
                 fake_prob = float(avg_probs[1])
                 
-                is_fake = fake_prob > self.threshold
+                # For binary classification with complementary probabilities,
+                # predict based on which probability is higher
+                # This is more consistent than using a fixed threshold
+                is_fake = fake_prob > real_prob
                 confidence = max(real_prob, fake_prob)
                 
                 processing_time = time.time() - start_time
@@ -486,7 +489,7 @@ class SEResNet50Detector:
                     model_name=self.model_name,
                     processing_time=processing_time,
                     metadata={
-                        'threshold': self.threshold,
+                        'prediction_method': 'argmax',  # Predict based on higher probability
                         'ensemble': use_ensemble,
                         'input_size': self.input_size
                     }
