@@ -104,8 +104,8 @@ def create_ensemble_detector():
              'distil-dire-celebahq',     # Good for face/portrait images
             # #'distil-dire-eps-imagenet', # Fast general-purpose detection
             # # SEResNet-50 models (excellent architecture for deepfake detection)
-            'seresnet50-pretrained',    # Uses pretrained model from torch.hub
-            # #'seresnet50',              # Fine-tuned model (if available)
+            # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
+            'seresnet50',              # Fine-tuned model (if available)
             # #'xception71',    # Excellent for deepfakes (requires timm)
             # # 'efficientnet_b7', # High accuracy (slower)
         ]

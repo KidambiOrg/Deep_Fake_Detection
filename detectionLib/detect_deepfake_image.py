@@ -431,19 +431,19 @@ MODEL_REGISTRY = {
     # SEResNet-50 Models
     'seresnet50': {
         'name': 'SEResNet-50',
-        'description': 'SEResNet-50 with Squeeze-and-Excitation blocks (excellent for deepfake detection)',
+        'description': 'SEResNet-50 with Squeeze-and-Excitation blocks (adapted from ImageNet for deepfake detection)',
         'architecture': 'SEResNet-50',
         'source': 'seresnet50',
-        'model_path': 'Models/SERESNet_50/seresnet50_complete_model.pth',  # Path to fine-tuned model
+        'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
-        'recommended_threshold': 0.6,  # Higher threshold for fine-tuned model
+        'recommended_threshold': 0.35,  # Optimal threshold for adapted pretrained model
     },
     'seresnet50-pretrained': {
         'name': 'SEResNet-50-Pretrained',
-        'description': 'SEResNet-50 pretrained on ImageNet (adapted for deepfake detection)',
+        'description': 'SEResNet-50 pretrained on ImageNet (same as seresnet50, kept for compatibility)',
         'architecture': 'SEResNet-50',
         'source': 'seresnet50',
-        'model_path': None,  # Will load from downloaded weights
+        'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
         'recommended_threshold': 0.35,  # Optimal threshold based on score distribution analysis
     },

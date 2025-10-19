@@ -246,36 +246,39 @@ def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
                 else:
                     model.load_state_dict(pretrained_dict)
             else:
-                # Fallback to default weights path in Models folder
+                # Load from default weights path in Models folder (no online download)
                 script_dir = Path(__file__).parent.parent
                 default_weights_path = script_dir / "Models" / "SERESNet_50" / "seresnet50-60a8950a85b2b.pkl"
                 
-                if default_weights_path.exists():
-                    logger.info(f"Loading SEResNet-50 weights from default location: {default_weights_path}")
-                    pretrained_dict = torch.load(default_weights_path, map_location='cpu')
-                    if num_classes != 1000:
-                        # Copy all layers except the final classifier for binary classification
-                        model_dict = model.state_dict()
-                        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and 'fc' not in k}
-                        model_dict.update(pretrained_dict)
-                        model.load_state_dict(model_dict)
-                    else:
-                        model.load_state_dict(pretrained_dict)
-                else:
-                    # Final fallback: reference implementation approach
-                    logger.info("Loading from reference implementation approach")
-                    from torch.hub import load_state_dict_from_url
-                    pretrained_dict = load_state_dict_from_url(
-                        "https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"
+                if not default_weights_path.exists():
+                    raise FileNotFoundError(
+                        f"SEResNet-50 pretrained weights not found at: {default_weights_path}\n"
+                        f"Please ensure the file 'seresnet50-60a8950a85b2b.pkl' exists in the Models/SERESNet_50 folder.\n"
+                        f"You can download it from: https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"
                     )
-                    if num_classes != 1000:
-                        # Copy all layers except the final classifier
-                        model_dict = model.state_dict()
-                        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and 'fc' not in k}
-                        model_dict.update(pretrained_dict)
-                        model.load_state_dict(model_dict)
-                    else:
-                        model.load_state_dict(pretrained_dict)
+                
+                logger.info(f"Loading SEResNet-50 weights from: {default_weights_path}")
+                
+                # Try loading with weights_only=True first (safer), fall back to False if needed
+                try:
+                    pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=True)
+                    logger.info("✓ Loaded weights successfully with weights_only=True")
+                except Exception as e:
+                    logger.warning(f"Failed to load with weights_only=True: {e}")
+                    logger.info("Retrying with weights_only=False (you trust this file from Models folder)")
+                    pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=False)
+                    logger.info("✓ Loaded weights successfully with weights_only=False")
+                
+                if num_classes != 1000:
+                    # Copy all layers except the final classifier for binary classification
+                    model_dict = model.state_dict()
+                    pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and 'fc' not in k}
+                    model_dict.update(pretrained_dict)
+                    model.load_state_dict(model_dict)
+                    logger.info(f"✓ Adapted model for {num_classes} classes (binary classification)")
+                else:
+                    model.load_state_dict(pretrained_dict)
+                    logger.info(f"✓ Loaded model with {num_classes} classes")
         except Exception as e:
             logger.warning(f"Could not load pretrained weights: {e}")
     
