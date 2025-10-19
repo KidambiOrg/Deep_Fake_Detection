@@ -75,6 +75,14 @@ except ImportError:
     SERESNET50_AVAILABLE = False
     logging.warning("SEResNet-50 detector not available.")
 
+# Try to import MesoNet detector
+try:
+    from .detect_deepfake_mesonet import MesoNetDetector
+    MESONET_AVAILABLE = True
+except ImportError:
+    MESONET_AVAILABLE = False
+    logging.warning("MesoNet detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -446,6 +454,17 @@ MODEL_REGISTRY = {
         'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
         'recommended_threshold': 0.35,  # Optimal threshold based on score distribution analysis
+    },
+    
+    # MesoNet Model
+    'mesonet': {
+        'name': 'MesoNet',
+        'description': 'MesoNet - Lightweight CNN for mesoscopic deepfake detection (compact and fast)',
+        'architecture': 'MesoNet CNN',
+        'source': 'mesonet',
+        'model_path': 'Models/mesonet/mesonet_model.h5',
+        'input_size': 256,
+        'recommended_threshold': 0.5,
     },
 }
 
@@ -1242,6 +1261,33 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_seresnet50_detector(detector, key)
                     logger.info(f"✓ Loaded SEResNet-50 model: {key}")
+                
+                elif config['source'] == 'mesonet':
+                    # Load MesoNet model
+                    if not MESONET_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: MesoNet detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    input_size = config.get('input_size', 256)
+                    threshold = config.get('recommended_threshold', 0.5)
+                    
+                    # Check if model file exists
+                    if model_path and not os.path.exists(model_path):
+                        logger.warning(f"⚠ MesoNet model not found at {model_path}")
+                        logger.info(f"   To use {key}, download the model:")
+                        logger.info("   python Scripts/download_mesonet_models.py")
+                        logger.info(f"   Or download manually from: https://github.com/muffin-123/DeepFake-Detection-mesonet_model.h5-")
+                        continue
+                    
+                    detector = MesoNetDetector(
+                        model_path=model_path,
+                        device=str(self.device),
+                        threshold=threshold,
+                        input_size=input_size
+                    )
+                    self.detectors[key] = self._wrap_mesonet_detector(detector, key)
+                    logger.info(f"✓ Loaded MesoNet model: {key}")
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1543,6 +1589,36 @@ class EnsembleDetector:
                 )
         
         return SEResNet50Wrapper(detector, model_key)
+    
+    def _wrap_mesonet_detector(self, detector, model_key: str):
+        """Wrap MesoNet detector to match DeepfakeImageDetector interface"""
+        class MesoNetWrapper:
+            """Wrapper to make MesoNet detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, mesonet_detector, model_key):
+                self.mesonet_detector = mesonet_detector
+                self.model_key = model_key
+                self.model_name = mesonet_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using MesoNet model"""
+                # Convert MesoNet result to DeepfakeDetectionResult
+                mesonet_result = self.mesonet_detector.detect_single(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=mesonet_result.is_fake,
+                    confidence=mesonet_result.confidence,
+                    scores={
+                        'Real': mesonet_result.real_probability,
+                        'Fake': mesonet_result.fake_probability
+                    },
+                    processing_time=mesonet_result.processing_time,
+                    image_path=image_input if isinstance(image_input, str) else None,
+                    model_name=self.model_name
+                )
+        
+        return MesoNetWrapper(detector, model_key)
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
