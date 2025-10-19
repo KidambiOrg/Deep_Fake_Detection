@@ -99,9 +99,10 @@ def create_ensemble_detector():
              'dima-vit',
              'organika-sdxl',           
             'nonescape-full',            
-             'universal-fake-v2',
+            #'universal-fake-v2',
             # # DistilDIRE models (lightweight and efficient)
-             'distil-dire-celebahq',     # Good for face/portrait images
+            'distil-dire-celebahq',     # Good for face/portrait images
+            # 'distil-dire-celebahq-full',
             # #'distil-dire-eps-imagenet', # Fast general-purpose detection
             # # SEResNet-50 models (excellent architecture for deepfake detection)
             # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
@@ -405,7 +406,7 @@ def process_single_image(image_path):
         return
     
     threshold=0.26
-    voting_method='weighted'  # Use the new reliability-weighted method for better accuracy
+    voting_method='weighted'  # Use the new reliability_weighted method for better accuracy
 
     # Create ensemble detector
     ensemble = create_ensemble_detector()
@@ -444,7 +445,7 @@ def process_images_in_a_directory(directory_path=None):
     results_data = []
 
     threshold=0.26
-    voting_method='weighted'  # Use the new reliability-weighted method for better accuracy
+    voting_method='weighted'  # Use the new reliability_weighted method for better accuracy
 
     
     for image_file in os.listdir(directory_path):

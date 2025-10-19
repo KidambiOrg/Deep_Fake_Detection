@@ -380,7 +380,7 @@ MODEL_REGISTRY = {
         'model_type': 'distil_dire',
         'inference_mode': 'img_only',  # TEST: Changed from 'full' to debug epsilon issues
         'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
+        'recommended_threshold': 0.35,
     },
     # Debug version with full mode
     'distil-dire-celebahq-full': {
@@ -1205,12 +1205,16 @@ class EnsembleDetector:
                             logger.warning(f"⚠ ADM model not found at {adm_model_path}, will use simplified version")
                             adm_model_path = None
                     
+                    # Get recommended threshold
+                    threshold = config.get('recommended_threshold', 0.5)
+                    
                     detector = DistilDIREDetector(
                         model_path=model_path,
                         model_type=model_type,
                         inference_mode=inference_mode,
                         adm_model_path=adm_model_path,
-                        device=str(self.device)
+                        device=str(self.device),
+                        threshold=threshold
                     )
                     self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
                     logger.info(f"✓ Loaded DistilDIRE model: {key}")
@@ -1602,13 +1606,14 @@ class EnsembleDetector:
         # Determine final prediction based on voting method
         if voting_method == 'majority':
             is_deepfake = fake_votes > real_votes
-            confidence = max(avg_fake_score, avg_real_score)
+            confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'weighted':
             # Use average fake score compared to threshold
             # This is more robust for noisy images
             is_deepfake = avg_fake_score >= threshold
-            confidence = avg_fake_score
+            # Confidence should represent certainty in the final prediction
+            confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'unanimous':
             # All models must agree
@@ -1618,7 +1623,8 @@ class EnsembleDetector:
         elif voting_method == 'average':
             # Use average fake score (same as weighted for consistency)
             is_deepfake = avg_fake_score >= threshold
-            confidence = avg_fake_score
+            # Confidence should represent certainty in the final prediction
+            confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'maximum':
             # Use prediction from model with highest confidence
@@ -1642,7 +1648,8 @@ class EnsembleDetector:
             # Increase threshold when there's high variance (disagreement between models)
             adjusted_threshold = threshold * (1 + score_variance)
             is_deepfake = avg_fake_score >= adjusted_threshold
-            confidence = avg_fake_score
+            # Confidence should represent certainty in the final prediction
+            confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'median':
             # Use median instead of mean - more robust to outliers
@@ -1809,10 +1816,11 @@ class EnsembleDetector:
             if total_weight > 0:
                 entropy_weighted_fake = weighted_fake_sum / total_weight
                 is_deepfake = entropy_weighted_fake >= threshold
-                confidence = entropy_weighted_fake
+                # Confidence should represent certainty in the final prediction
+                confidence = entropy_weighted_fake if is_deepfake else (1 - entropy_weighted_fake)
             else:
                 is_deepfake = avg_fake_score >= threshold
-                confidence = avg_fake_score
+                confidence = avg_fake_score if is_deepfake else avg_real_score
         
         elif voting_method == 'consensus_threshold':
             # Adaptive threshold based on model consensus
@@ -1824,7 +1832,8 @@ class EnsembleDetector:
             adjusted_threshold = threshold * (2 - consensus_strength)
             
             is_deepfake = avg_fake_score >= adjusted_threshold
-            confidence = avg_fake_score
+            # Confidence should represent certainty in the final prediction
+            confidence = avg_fake_score if is_deepfake else avg_real_score
         
         else:
             raise ValueError(f"Unknown voting method: {voting_method}")

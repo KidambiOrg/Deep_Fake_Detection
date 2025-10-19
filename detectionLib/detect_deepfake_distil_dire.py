@@ -66,7 +66,8 @@ class DistilDIREDetector:
                  model_type: str = 'distil_dire',
                  inference_mode: str = 'full',
                  adm_model_path: Optional[str] = None,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 threshold: float = 0.5):
         """
         Initialize the DistilDIRE detector
         
@@ -76,6 +77,7 @@ class DistilDIREDetector:
             inference_mode: Inference mode ('full', 'eps_only', 'img_only')
             adm_model_path: Path to the ADM diffusion model (required for epsilon computation)
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            threshold: Threshold for deepfake classification (default: 0.5)
         """
         # Set device
         if device is None:
@@ -89,6 +91,7 @@ class DistilDIREDetector:
         self.model_type = model_type
         self.inference_mode = inference_mode
         self.model_name = f"DistilDIRE-{model_type}-{inference_mode}"
+        self.threshold = threshold
         
         # Load the DistilDIRE model
         self.model = None
@@ -335,18 +338,22 @@ class DistilDIREDetector:
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
-               threshold: float = 0.5) -> DistilDIREDetectionResult:
+               threshold: Optional[float] = None) -> DistilDIREDetectionResult:
         """
         Detect deepfake in an image using DistilDIRE
         
         Args:
             image_input: Input image (file path, PIL Image, numpy array, or bytes)
-            threshold: Threshold for deepfake classification (0.0-1.0)
+            threshold: Threshold for deepfake classification (0.0-1.0). If None, uses the instance threshold.
             
         Returns:
             DistilDIREDetectionResult object with detection results
         """
         start_time = time.time()
+        
+        # Use instance threshold if not provided
+        if threshold is None:
+            threshold = self.threshold
         
         try:
             # Preprocess image
