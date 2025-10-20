@@ -307,7 +307,8 @@ class SEResNet50Detector:
                  model_path: Optional[str] = None,
                  device: Optional[str] = None,
                  threshold: float = 0.5,
-                 input_size: int = 224):
+                 input_size: int = 224,
+                 debug: bool = False):
         """
         Initialize SEResNet-50 detector
         
@@ -316,11 +317,13 @@ class SEResNet50Detector:
             device: Device to run inference on ('cpu' or 'cuda')
             threshold: Classification threshold (default: 0.5)
             input_size: Input image size (default: 224)
+            debug: If True, enable verbose logging
         """
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.threshold = threshold
         self.input_size = input_size
         self.model_name = "SEResNet-50"
+        self.debug = debug
         
         # Initialize model
         self.model = self._load_model(model_path)
@@ -356,20 +359,23 @@ class SEResNet50Detector:
             ])
         ]
         
-        logger.info(f"SEResNet-50 detector initialized on {self.device}")
+        if self.debug:
+            logger.info(f"SEResNet-50 detector initialized on {self.device}")
     
     def _load_model(self, model_path: Optional[str] = None) -> nn.Module:
         """Load SEResNet-50 model"""
         try:
             if model_path and os.path.exists(model_path):
                 # Load fine-tuned model for deepfake detection
-                logger.info(f"Loading fine-tuned model from {model_path}")
+                if self.debug:
+                    logger.info(f"Loading fine-tuned model from {model_path}")
                 model = se_resnet50(num_classes=2, pretrained=False)
                 state_dict = torch.load(model_path, map_location='cpu')
                 model.load_state_dict(state_dict)
             else:
                 # Load pretrained ImageNet model and use as feature extractor
-                logger.info("Loading pretrained SEResNet-50 as feature extractor")
+                if self.debug:
+                    logger.info("Loading pretrained SEResNet-50 as feature extractor")
                 # Load pretrained model with ImageNet weights (1000 classes)
                 model = se_resnet50(num_classes=1000, pretrained=True)
                 
@@ -534,7 +540,8 @@ class SEResNet50Detector:
             results.extend(batch_results)
             
             if (i // batch_size + 1) % 10 == 0:
-                logger.info(f"Processed {i + len(batch)}/{len(images)} images")
+                if self.debug:
+                    logger.info(f"Processed {i + len(batch)}/{len(images)} images")
         
         return results
     

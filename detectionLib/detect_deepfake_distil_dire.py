@@ -67,7 +67,8 @@ class DistilDIREDetector:
                  inference_mode: str = 'full',
                  adm_model_path: Optional[str] = None,
                  device: Optional[str] = None,
-                 threshold: float = 0.5):
+                 threshold: float = 0.5,
+                 debug: bool = False):
         """
         Initialize the DistilDIRE detector
         
@@ -78,14 +79,18 @@ class DistilDIREDetector:
             adm_model_path: Path to the ADM diffusion model (required for epsilon computation)
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
             threshold: Threshold for deepfake classification (default: 0.5)
+            debug: Enable debug logging (default: False)
         """
+        self.debug = debug
+        
         # Set device
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
         
-        logger.info(f"Using device: {self.device}")
+        if self.debug:
+            logger.info(f"Using device: {self.device}")
         
         self.model_path = model_path
         self.model_type = model_type
@@ -102,7 +107,8 @@ class DistilDIREDetector:
         
         # Basic sanity check
         if self.model is not None:
-            logger.info(f"✅ DistilDIRE model loaded successfully: {self.model_name}")
+            if self.debug:
+                logger.info(f"✅ DistilDIRE model loaded successfully: {self.model_name}")
         else:
             logger.error(f"❌ Failed to load DistilDIRE model: {self.model_name}")
         
@@ -116,10 +122,11 @@ class DistilDIREDetector:
     
     def _load_model(self):
         """Load the DistilDIRE model"""
-        logger.info(f"🔧 Loading DistilDIRE model...")
-        logger.info(f"  📁 Model path: {self.model_path}")
-        logger.info(f"  🏗️ Model type: {self.model_type}")
-        logger.info(f"  📱 Device: {self.device}")
+        if self.debug:
+            logger.info(f"🔧 Loading DistilDIRE model...")
+            logger.info(f"  📁 Model path: {self.model_path}")
+            logger.info(f"  🏗️ Model type: {self.model_type}")
+            logger.info(f"  📱 Device: {self.device}")
         
         try:
             # Check if model file exists
@@ -129,7 +136,8 @@ class DistilDIREDetector:
                 return
             
             file_size = os.path.getsize(self.model_path) / (1024*1024)  # MB
-            logger.info(f"  📊 Model file size: {file_size:.1f} MB")
+            if self.debug:
+                logger.info(f"  📊 Model file size: {file_size:.1f} MB")
             
             self.model = load_distil_dire_model(
                 self.model_path, 
@@ -138,26 +146,27 @@ class DistilDIREDetector:
             )
             
             if self.model is not None:
-                logger.info(f"✅ Model loaded successfully from: {self.model_path}")
+                if self.debug:
+                    logger.info(f"✅ Model loaded successfully from: {self.model_path}")
                 
-                # Debug model architecture
-                total_params = sum(p.numel() for p in self.model.parameters())
-                logger.info(f"  📊 Total parameters: {total_params:,}")
+                    # Debug model architecture
+                    total_params = sum(p.numel() for p in self.model.parameters())
+                    logger.info(f"  📊 Total parameters: {total_params:,}")
                 
-                # Check first conv layer (should be 6 channels for full/img_only, 3 for eps_only)
-                try:
-                    if hasattr(self.model, 'student_backbone') and hasattr(self.model.student_backbone, 'conv1'):
-                        conv1 = self.model.student_backbone.conv1
-                        if isinstance(conv1, torch.nn.Conv2d):
-                            logger.info(f"  🔧 First conv layer: {conv1.in_channels} → {conv1.out_channels}")
-                            
-                            expected_channels = 6 if self.inference_mode in ['full', 'img_only'] else 3
-                            if conv1.in_channels != expected_channels:
-                                logger.warning(f"⚠️ Channel mismatch! Expected {expected_channels}, got {conv1.in_channels}")
-                        else:
-                            logger.info(f"  🔧 First conv layer type: {type(conv1)}")
-                except Exception as conv_e:
-                    logger.info(f"  🔧 Could not inspect conv layer: {conv_e}")
+                    # Check first conv layer (should be 6 channels for full/img_only, 3 for eps_only)
+                    try:
+                        if hasattr(self.model, 'student_backbone') and hasattr(self.model.student_backbone, 'conv1'):
+                            conv1 = self.model.student_backbone.conv1
+                            if isinstance(conv1, torch.nn.Conv2d):
+                                logger.info(f"  🔧 First conv layer: {conv1.in_channels} → {conv1.out_channels}")
+                                
+                                expected_channels = 6 if self.inference_mode in ['full', 'img_only'] else 3
+                                if conv1.in_channels != expected_channels:
+                                    logger.warning(f"⚠️ Channel mismatch! Expected {expected_channels}, got {conv1.in_channels}")
+                            else:
+                                logger.info(f"  🔧 First conv layer type: {type(conv1)}")
+                    except Exception as conv_e:
+                        logger.info(f"  🔧 Could not inspect conv layer: {conv_e}")
                 
                 # Test model with dummy input
                 try:
@@ -175,8 +184,9 @@ class DistilDIREDetector:
                             test_output = self.model(zero_img, dummy_eps)
                         
                         logit = test_output['logit']
-                        logger.info(f"  🧪 Dummy test successful, logit shape: {logit.shape}")
-                        logger.info(f"  🧪 Dummy logit value: {logit.item():.6f}")
+                        if self.debug:
+                            logger.info(f"  🧪 Dummy test successful, logit shape: {logit.shape}")
+                            logger.info(f"  🧪 Dummy logit value: {logit.item():.6f}")
                         
                 except Exception as test_e:
                     logger.error(f"❌ Model test failed: {test_e}")
@@ -218,7 +228,8 @@ class DistilDIREDetector:
             
             # Load the pretrained weights
             if os.path.exists(adm_model_path):
-                logger.info(f"Loading ADM model from {adm_model_path}")
+                if self.debug:
+                    logger.info(f"Loading ADM model from {adm_model_path}")
                 state_dict = torch.load(adm_model_path, map_location="cpu")
                 self.adm_model.load_state_dict(state_dict)
                 self.adm_model.to(self.device)
@@ -226,7 +237,8 @@ class DistilDIREDetector:
                 
                 # Store the loaded flag for epsilon computation
                 self.adm_loaded = True
-                logger.info(f"✅ Successfully loaded ADM model for epsilon computation")
+                if self.debug:
+                    logger.info(f"✅ Successfully loaded ADM model for epsilon computation")
             else:
                 logger.error(f"❌ ADM model file not found: {adm_model_path}")
                 logger.error("Please download the ADM model using: powershell -Command \"Invoke-WebRequest -Uri 'https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_diffusion_uncond.pt' -OutFile 'Models/256x256-adm.pt'\"")
@@ -284,33 +296,39 @@ class DistilDIREDetector:
         """
         Compute epsilon using DDIM inversion with the loaded ADM model
         """
-        logger.info(f"🔧 Computing epsilon - Starting epsilon computation")
-        logger.info(f"  📊 Input image shape: {image.shape}")
-        logger.info(f"  📊 Input image range: [{image.min().item():.3f}, {image.max().item():.3f}]")
+        if self.debug:
+            logger.info(f"🔧 Computing epsilon - Starting epsilon computation")
+            logger.info(f"  📊 Input image shape: {image.shape}")
+            logger.info(f"  📊 Input image range: [{image.min().item():.3f}, {image.max().item():.3f}]")
         
         try:
             if not hasattr(self, 'adm_loaded') or not self.adm_loaded:
                 logger.warning("⚠️ ADM model not loaded, returning zero epsilon")
                 return torch.zeros_like(image)
                 
-            logger.info(f"✅ ADM model is loaded, proceeding with epsilon computation")
+            if self.debug:
+                logger.info(f"✅ ADM model is loaded, proceeding with epsilon computation")
             
             with torch.no_grad():
                 # Use t=0 (first timestep) for epsilon computation as in original DistilDIRE
                 t = torch.zeros(image.shape[0], device=self.device, dtype=torch.long)
-                logger.info(f"  🔧 Using timestep t=0 for {image.shape[0]} images")
+                if self.debug:
+                    logger.info(f"  🔧 Using timestep t=0 for {image.shape[0]} images")
                 
                 # Check if diffusion and adm_model are available
                 if self.diffusion is None or self.adm_model is None:
                     logger.warning("⚠️ Diffusion or ADM model not available")
-                    logger.info(f"  📊 Diffusion available: {self.diffusion is not None}")
-                    logger.info(f"  📊 ADM model available: {self.adm_model is not None}")
+                    if self.debug:
+                        logger.info(f"  📊 Diffusion available: {self.diffusion is not None}")
+                        logger.info(f"  📊 ADM model available: {self.adm_model is not None}")
                     return torch.zeros_like(image)
                 
-                logger.info(f"✅ Both diffusion and ADM model available")
+                if self.debug:
+                    logger.info(f"✅ Both diffusion and ADM model available")
                 
                 # Compute epsilon using DDIM reverse sampling
-                logger.info(f"🔧 Calling DDIM reverse sampling...")
+                if self.debug:
+                    logger.info(f"🔧 Calling DDIM reverse sampling...")
                 eps = self.diffusion.ddim_reverse_sample_only_eps(
                     self.adm_model,
                     image,
@@ -319,11 +337,12 @@ class DistilDIREDetector:
                     eta=0.0
                 )
                 
-                logger.info(f"✅ Epsilon computed successfully!")
-                logger.info(f"  📊 Epsilon shape: {eps.shape}")
-                logger.info(f"  📊 Epsilon range: [{eps.min().item():.3f}, {eps.max().item():.3f}]")
-                logger.info(f"  📊 Epsilon mean: {eps.mean().item():.6f}")
-                logger.info(f"  📊 Epsilon std: {eps.std().item():.6f}")
+                if self.debug:
+                    logger.info(f"✅ Epsilon computed successfully!")
+                    logger.info(f"  📊 Epsilon shape: {eps.shape}")
+                    logger.info(f"  📊 Epsilon range: [{eps.min().item():.3f}, {eps.max().item():.3f}]")
+                    logger.info(f"  📊 Epsilon mean: {eps.mean().item():.6f}")
+                    logger.info(f"  📊 Epsilon std: {eps.std().item():.6f}")
                 
                 return eps
                 
@@ -408,18 +427,19 @@ class DistilDIREDetector:
                 fake_probability = torch.sigmoid(logit).item()
                 
                 # EXTENSIVE DEBUG: Understanding model behavior
-                logger.info(f"🔍 DistilDIRE EXTENSIVE DEBUG - Model: {self.model_name}")
-                logger.info(f"  📊 Raw logit: {logit.item():.6f}")
-                logger.info(f"  📊 Sigmoid output: {fake_probability:.6f}")
-                logger.info(f"  📊 Inference mode: {self.inference_mode}")
-                logger.info(f"  📊 Model loaded: {self.model is not None}")
-                logger.info(f"  📊 ADM loaded: {hasattr(self, 'adm_model') and self.adm_model is not None}")
-                logger.info(f"  📊 Diffusion loaded: {hasattr(self, 'diffusion') and self.diffusion is not None}")
+                if self.debug:
+                    logger.info(f"🔍 DistilDIRE EXTENSIVE DEBUG - Model: {self.model_name}")
+                    logger.info(f"  📊 Raw logit: {logit.item():.6f}")
+                    logger.info(f"  📊 Sigmoid output: {fake_probability:.6f}")
+                    logger.info(f"  📊 Inference mode: {self.inference_mode}")
+                    logger.info(f"  📊 Model loaded: {self.model is not None}")
+                    logger.info(f"  📊 ADM loaded: {hasattr(self, 'adm_model') and self.adm_model is not None}")
+                    logger.info(f"  📊 Diffusion loaded: {hasattr(self, 'diffusion') and self.diffusion is not None}")
                 
-                # Check if we're in modes that need epsilon
-                if self.inference_mode in ['full', 'eps_only']:
-                    has_adm = hasattr(self, 'adm_model') and self.adm_model is not None
-                    logger.info(f"  🔧 Epsilon computation mode, ADM available: {has_adm}")
+                    # Check if we're in modes that need epsilon
+                    if self.inference_mode in ['full', 'eps_only']:
+                        has_adm = hasattr(self, 'adm_model') and self.adm_model is not None
+                        logger.info(f"  🔧 Epsilon computation mode, ADM available: {has_adm}")
                 
                 # Determine if deepfake
                 is_deepfake = fake_probability >= threshold

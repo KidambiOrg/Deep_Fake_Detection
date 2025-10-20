@@ -180,7 +180,8 @@ class NonescapeDetector:
     def __init__(self, 
                  model_path: str,
                  use_mini: bool = True,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 debug: bool = False):
         """
         Initialize Nonescape detector
         
@@ -188,13 +189,16 @@ class NonescapeDetector:
             model_path: Path to .safetensors model file
             use_mini: If True, use mini model (faster). If False, use full model (more accurate)
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            debug: If True, enable verbose logging
         """
         self.model_path = model_path
         self.use_mini = use_mini
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.debug = debug
         
-        logger.info(f"Initializing Nonescape{'Mini' if use_mini else ''} detector on device: {self.device}")
-        logger.info(f"Model path: {model_path}")
+        if self.debug:
+            logger.info(f"Initializing Nonescape{'Mini' if use_mini else ''} detector on device: {self.device}")
+            logger.info(f"Model path: {model_path}")
         
         if not os.path.exists(model_path):
             raise FileNotFoundError(
@@ -219,7 +223,8 @@ class NonescapeDetector:
             self.model = self.model.to(self.device)
             self.model.eval()
             
-            logger.info(f"{self.model_name} model loaded successfully")
+            if self.debug:
+                logger.info(f"{self.model_name} model loaded successfully")
             
         except Exception as e:
             logger.error(f"Failed to load Nonescape model: {e}")

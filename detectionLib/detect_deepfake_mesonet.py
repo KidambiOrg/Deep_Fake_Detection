@@ -176,7 +176,8 @@ class MesoNetDetector:
                  model_path: Optional[str] = None,
                  device: Optional[str] = None,
                  threshold: float = 0.5,
-                 input_size: int = 256):
+                 input_size: int = 256,
+                 debug: bool = False):
         """
         Initialize MesoNet detector
         
@@ -185,6 +186,7 @@ class MesoNetDetector:
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
             threshold: Threshold for fake classification (0.0 to 1.0)
             input_size: Input image size (default: 256x256 as per MesoNet paper)
+            debug: If True, enable verbose logging
         """
         # Set device
         if device is None:
@@ -195,9 +197,11 @@ class MesoNetDetector:
         self.threshold = threshold
         self.input_size = input_size
         self.model_name = "MesoNet"
+        self.debug = debug
         
-        logger.info(f"Initializing MesoNet detector on device: {self.device}")
-        logger.info(f"Input size: {input_size}x{input_size}, Threshold: {threshold}")
+        if self.debug:
+            logger.info(f"Initializing MesoNet detector on device: {self.device}")
+            logger.info(f"Input size: {input_size}x{input_size}, Threshold: {threshold}")
         
         # Load model
         self.model = self._load_model(model_path)
@@ -223,7 +227,8 @@ class MesoNetDetector:
         """
         import numpy as np
         
-        logger.info("Starting Keras to PyTorch weight conversion...")
+        if self.debug:
+            logger.info("Starting Keras to PyTorch weight conversion...")
         
         # Get all layers from Keras model
         keras_layers = {layer.name: layer for layer in keras_model.layers}
@@ -245,7 +250,8 @@ class MesoNetDetector:
                     pytorch_layer.weight.data = torch.from_numpy(kernel).float()
                     if len(weights) > 1 and pytorch_layer.bias is not None:
                         pytorch_layer.bias.data = torch.from_numpy(weights[1]).float()
-                    logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
+                    if self.debug:
+                        logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
                     return True
             return False
         
@@ -261,7 +267,8 @@ class MesoNetDetector:
                     pytorch_layer.bias.data = torch.from_numpy(weights[1]).float()
                     pytorch_layer.running_mean.data = torch.from_numpy(weights[2]).float()
                     pytorch_layer.running_var.data = torch.from_numpy(weights[3]).float()
-                    logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
+                    if self.debug:
+                        logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
                     return True
             return False
         
@@ -277,7 +284,8 @@ class MesoNetDetector:
                     pytorch_layer.weight.data = torch.from_numpy(kernel).float()
                     if len(weights) > 1 and pytorch_layer.bias is not None:
                         pytorch_layer.bias.data = torch.from_numpy(weights[1]).float()
-                    logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
+                    if self.debug:
+                        logger.info(f"  ✓ Copied {keras_layer_name} -> {pytorch_layer}")
                     return True
             return False
         
@@ -298,7 +306,8 @@ class MesoNetDetector:
         ]
         
         # Try to copy conv layers
-        logger.info("Converting convolutional layers...")
+        if self.debug:
+            logger.info("Converting convolutional layers...")
         pytorch_convs = [pytorch_model.conv1, pytorch_model.conv2, pytorch_model.conv3, pytorch_model.conv4]
         for i, pytorch_conv in enumerate(pytorch_convs):
             copied = False
@@ -311,7 +320,8 @@ class MesoNetDetector:
                 logger.warning(f"  ⚠ Could not find Keras layer for conv{i+1}")
         
         # Try to copy batch norm layers
-        logger.info("Converting batch normalization layers...")
+        if self.debug:
+            logger.info("Converting batch normalization layers...")
         pytorch_bns = [pytorch_model.bn1, pytorch_model.bn2, pytorch_model.bn3, pytorch_model.bn4]
         for i, pytorch_bn in enumerate(pytorch_bns):
             copied = False
@@ -324,7 +334,8 @@ class MesoNetDetector:
                 logger.warning(f"  ⚠ Could not find Keras layer for bn{i+1}")
         
         # Try to copy fully connected layers
-        logger.info("Converting fully connected layers...")
+        if self.debug:
+            logger.info("Converting fully connected layers...")
         pytorch_fcs = [pytorch_model.fc1, pytorch_model.fc2]
         for i, pytorch_fc in enumerate(pytorch_fcs):
             copied = False
@@ -336,7 +347,8 @@ class MesoNetDetector:
             if not copied:
                 logger.warning(f"  ⚠ Could not find Keras layer for fc{i+1}")
         
-        logger.info("Weight conversion completed!")
+        if self.debug:
+            logger.info("Weight conversion completed!")
     
     def _load_model(self, model_path: Optional[str] = None) -> nn.Module:
         """
@@ -352,7 +364,8 @@ class MesoNetDetector:
             model = MesoNet(num_classes=1)
             
             if model_path and os.path.exists(model_path):
-                logger.info(f"Loading pretrained MesoNet model from: {model_path}")
+                if self.debug:
+                    logger.info(f"Loading pretrained MesoNet model from: {model_path}")
                 
                 # Check file extension
                 if model_path.endswith('.h5'):
@@ -360,14 +373,17 @@ class MesoNetDetector:
                     pth_path = model_path.replace('.h5', '_converted.pth')
                     
                     if os.path.exists(pth_path):
-                        logger.info(f"Found converted PyTorch model: {pth_path}")
-                        logger.info("Loading converted model (skipping conversion)")
+                        if self.debug:
+                            logger.info(f"Found converted PyTorch model: {pth_path}")
+                            logger.info("Loading converted model (skipping conversion)")
                         state_dict = torch.load(pth_path, map_location='cpu')
                         model.load_state_dict(state_dict)
-                        logger.info("✓ Converted MesoNet model loaded successfully")
+                        if self.debug:
+                            logger.info("✓ Converted MesoNet model loaded successfully")
                     else:
                         # Load Keras model and convert to PyTorch
-                        logger.info("No converted model found. Converting from Keras .h5 file...")
+                        if self.debug:
+                            logger.info("No converted model found. Converting from Keras .h5 file...")
                         try:
                             # Try to import tensorflow/keras
                             import tensorflow as tf
@@ -375,16 +391,20 @@ class MesoNetDetector:
                             
                             # Load Keras model
                             keras_model = keras.models.load_model(model_path)
-                            logger.info("Keras model loaded successfully")
+                            if self.debug:
+                                logger.info("Keras model loaded successfully")
                             
                             # Convert Keras weights to PyTorch
                             self._convert_keras_to_pytorch(keras_model, model)
-                            logger.info("✓ Successfully converted Keras weights to PyTorch")
+                            if self.debug:
+                                logger.info("✓ Successfully converted Keras weights to PyTorch")
                             
                             # Save converted model for future use
-                            logger.info(f"Saving converted model to: {pth_path}")
+                            if self.debug:
+                                logger.info(f"Saving converted model to: {pth_path}")
                             torch.save(model.state_dict(), pth_path)
-                            logger.info("✓ Converted model saved successfully")
+                            if self.debug:
+                                logger.info("✓ Converted model saved successfully")
                             
                         except ImportError:
                             logger.warning("TensorFlow/Keras not installed. Cannot load .h5 file.")
@@ -396,10 +416,12 @@ class MesoNetDetector:
                 
                 elif model_path.endswith('.pth') or model_path.endswith('.pt'):
                     # Load PyTorch model
-                    logger.info("Loading PyTorch model weights")
+                    if self.debug:
+                        logger.info("Loading PyTorch model weights")
                     state_dict = torch.load(model_path, map_location='cpu')
                     model.load_state_dict(state_dict)
-                    logger.info("✓ MesoNet model loaded successfully")
+                    if self.debug:
+                        logger.info("✓ MesoNet model loaded successfully")
                 
                 else:
                     logger.warning(f"Unsupported model file format: {model_path}")

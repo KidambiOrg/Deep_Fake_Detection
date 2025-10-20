@@ -98,8 +98,12 @@ def list_voting_methods():
     print("| Mixed image types | `adaptive_threshold` | Adapts to uncertainty |")
 
 
-def create_ensemble_detector():
-    """Create and return an ensemble detector with configured models"""
+def create_ensemble_detector(debug=False):
+    """Create and return an ensemble detector with configured models
+    
+    Args:
+        debug: Enable debug logging (default: False)
+    """
     return EnsembleDetector(
         model_keys=[
             # HuggingFace models
@@ -116,10 +120,11 @@ def create_ensemble_detector():
             # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
             'seresnet50',              # Fine-tuned model (if available)
             # MesoNet model (lightweight CNN for mesoscopic detection)
-             'mesonet',                 # Compact and fast, good for faces
-            # #'xception71',    # Excellent for deepfakes (requires timm)
-            # # 'efficientnet_b7', # High accuracy (slower)
-        ]
+            # 'mesonet',                 # Compact and fast, good for faces
+            # 'xception71',    # Excellent for deepfakes (requires timm)
+            # 'efficientnet_b7', # High accuracy (slower)
+        ],
+        debug=debug
     )
 
 
@@ -401,111 +406,105 @@ def compare_voting_methods(image_path, ensemble, threshold=0.26):
     return results
 
 
-def process_single_image(image_path):
-    """Process a single image and display results"""
+def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='weighted', debug=False):
+    """Process a single image or directory with pre-loaded ensemble
     
-    print("\n\nProcessing Single Image")
-    print("=" * 40)
-    
-    if not os.path.exists(image_path):
-        print(f"Image '{image_path}' not found.")
-        return
-    
-    if not os.path.isfile(image_path):
-        print(f"Path '{image_path}' is not a file.")
-        return
-    
-    threshold=0.26
-    voting_method='weighted'  # Use the new reliability_weighted method for better accuracy
-
-    # Create ensemble detector
-    ensemble = create_ensemble_detector()
-    
-    # Process the image
-    data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
-    
-    if data:
-        # Display results
-        print("\n\n## 🎯 Detection Results")
-        print("\n### Overall Result\n")
-        display_overall_results_table([data])
-        display_individual_model_results([data])
-
-def process_images_in_a_directory(directory_path=None):
-    """Example of processing and filtering results"""
-    
-    print("\n\nProcessing Results Example")
-    print("=" * 40)
-    
-    if directory_path is None:
-        directory_path = "C:\\Kidambi\\WorkRelated\\DeepFake\\sample_images"
-    
-    if not os.path.exists(directory_path):
-        print(f"Directory '{directory_path}' not found.")
-        return
-    
-    if not os.path.isdir(directory_path):
-        print(f"Path '{directory_path}' is not a directory.")
-        return
-    
-    # Create ensemble detector
-    ensemble = create_ensemble_detector()
-    
-    # Collect results from all images
-    results_data = []
-
-    threshold=0.26
-    voting_method='weighted'  # Use the new reliability_weighted method for better accuracy
-
-    
-    for image_file in os.listdir(directory_path):
-        image_path = os.path.join(directory_path, image_file)
-        if os.path.isfile(image_path):
-            # Process each image
-            data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
+    Args:
+        path: Path to an image file or directory
+        ensemble: Pre-loaded EnsembleDetector instance
+        threshold: Detection threshold
+        voting_method: Voting method for ensemble
+        debug: Enable debug logging (default: False)
+    """
+    try:
+        if os.path.isfile(path):
+            # Single image
+            print(f"\n📷 Processing single image: {path}")
+            data = process_image_data(path, ensemble, threshold=threshold, voting_method=voting_method)
+            
             if data:
-                results_data.append(data)
+                # Display results
+                print("\n\n## 🎯 Detection Results")
+                print("\n### Overall Result\n")
+                display_overall_results_table([data])
+                display_individual_model_results([data])
+                
+        elif os.path.isdir(path):
+            print(f"\n📁 Processing directory: {path}")
+            
+            # Collect results from all images
+            results_data = []
+            
+            for image_file in os.listdir(path):
+                image_path = os.path.join(path, image_file)
+                if os.path.isfile(image_path):
+                    # Process each image
+                    data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
+                    if data:
+                        results_data.append(data)
+                else:
+                    print(f"Skipping non-file entry: {image_file}")
+            
+            # Calculate and display metrics
+            if results_data:
+                calculate_and_display_metrics(results_data, voting_method=voting_method, threshold=threshold)
+                
+                # Display results in markdown table format
+                print("\n\n## 🎯 Detection Results Summary")
+                print("\n### Overall Results\n")
+                display_overall_results_table(results_data)
+                display_individual_model_results(results_data)
         else:
-            print(f"Skipping non-file entry: {image_file}")
-    
-    # Calculate and display metrics
-    if results_data:
-        calculate_and_display_metrics(results_data, voting_method=voting_method, threshold=threshold)
-        
-        # Display results in markdown table format
-        print("\n\n## 🎯 Detection Results Summary")
-        print("\n### Overall Results\n")
-        display_overall_results_table(results_data)
-        display_individual_model_results(results_data)
+            print(f"❌ Error: Path '{path}' does not exist or is not accessible.")
+            
+    except Exception as e:
+        print(f"❌ Error processing path: {e}")
 
- 
 
-def main(path=None):
+def main(path=None, debug=False):
     """Run deepfake detection on an image or directory
     
     Args:
-        path: Path to an image file or directory. If None, uses default directory.
+        path: Path to an image file or directory. If None, enters interactive mode.
+        debug: Enable debug logging (default: False)
     """
     
     print("Deepfake Detection - Optimized for 90% Accuracy")
     print("=" * 50)
     
     try:
-        # Show available models first (optional)
-        # list_available_models_example()
+        # Configuration
+        threshold = 0.26
+        voting_method = 'weighted'
         
-        if path is None:
-            # Use default directory
-            process_images_in_a_directory()
-        elif os.path.isfile(path):
-            # Single image
-            print(f"\n📷 Processing single image: {path}")
-            process_single_image(path)
-        elif os.path.isdir(path):
-            print(f"\n📁 Processing directory: {path}")
-            process_images_in_a_directory(path)
+        # Load ensemble models into memory once at startup
+        print("\n🔄 Loading ensemble models into memory...")
+        ensemble = create_ensemble_detector(debug=debug)
+        print("✅ Models loaded successfully!\n")
+        
+        if path is not None:
+            # Single execution mode with provided path
+            process_path_with_ensemble(path, ensemble, threshold, voting_method, debug)
         else:
-            print(f"❌ Error: Path '{path}' does not exist or is not accessible.")
+            # Interactive loop mode
+            print("\n📝 Interactive Mode")
+            print("=" * 50)
+            print("Enter:")
+            print("  - Path to an image file to analyze")
+            print("  - Path to a directory to analyze all images")
+            print("  - 'exit' or press Enter to quit")
+            print("=" * 50)
+            
+            while True:
+                user_input = input("\n👉 Enter image/directory path (or 'exit'): ").strip()
+                
+                # Check for exit condition
+                if user_input.lower() == 'exit' or user_input == '':
+                    print("\n👋 Exiting deepfake detection. Goodbye!")
+                    break
+                
+                # Process the provided path
+                process_path_with_ensemble(user_input, ensemble, threshold, voting_method, debug)
         
     except Exception as e:
         print(f"❌ Error running detection: {e}")

@@ -63,7 +63,8 @@ class UniversalFakeDetectV2Detector:
     
     def __init__(self, 
                  model_path: Optional[str] = None,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 debug: bool = False):
         """
         Initialize the UniversalFakeDetectV2 detector
         
@@ -71,6 +72,7 @@ class UniversalFakeDetectV2Detector:
             model_path: Path to the pretrained model weights (.pth file)
                        Default: "pretrained_weights/continued_ft_from_concat_20240930.pth"
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            debug: If True, enable verbose logging
         """
         # Set device
         if device is None:
@@ -78,7 +80,9 @@ class UniversalFakeDetectV2Detector:
         else:
             self.device = torch.device(device)
         
-        logger.info(f"Using device: {self.device}")
+        self.debug = debug
+        if self.debug:
+            logger.info(f"Using device: {self.device}")
         
         # Set default model path if not provided
         if model_path is None:
@@ -98,14 +102,16 @@ class UniversalFakeDetectV2Detector:
     def _load_model(self):
         """Load the pre-trained model and CLIP backbone"""
         try:
-            logger.info(f"Loading UniversalFakeDetectV2 model")
+            if self.debug:
+                logger.info(f"Loading UniversalFakeDetectV2 model")
             
             # Initialize the detection model
             self.model = UniversalFakeDetectv2()
             
             # Load pretrained weights if available
             if os.path.exists(self.model_path):
-                logger.info(f"Loading pretrained weights from: {self.model_path}")
+                if self.debug:
+                    logger.info(f"Loading pretrained weights from: {self.model_path}")
                 ckpt = torch.load(self.model_path, map_location=self.device, weights_only=True)
                 
                 if "model" in ckpt.keys():
@@ -113,7 +119,8 @@ class UniversalFakeDetectV2Detector:
                 else:
                     self.model.load_state_dict(ckpt)
                 
-                logger.info("Pretrained weights loaded successfully")
+                if self.debug:
+                    logger.info("Pretrained weights loaded successfully")
             else:
                 logger.warning(f"Pretrained weights not found at {self.model_path}")
                 logger.warning("Using model with random initialization - results may be unreliable")
@@ -125,11 +132,13 @@ class UniversalFakeDetectV2Detector:
             
             # Load CLIP backbone
             clip_backbone = "openai/clip-vit-large-patch14"
-            logger.info(f"Loading CLIP backbone: {clip_backbone}")
+            if self.debug:
+                logger.info(f"Loading CLIP backbone: {clip_backbone}")
             self.backbone = CLIPModel.from_pretrained(clip_backbone).to(self.device)
             self.processor = CLIPImageProcessor.from_pretrained(clip_backbone)
             
-            logger.info("UniversalFakeDetectV2 model loaded successfully")
+            if self.debug:
+                logger.info("UniversalFakeDetectV2 model loaded successfully")
             
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")

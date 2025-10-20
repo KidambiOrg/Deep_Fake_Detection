@@ -547,7 +547,8 @@ class DeepfakeImageDetector:
     
     def __init__(self, 
                  model_name: str = "prithivMLMods/deepfake-detector-model-v1",
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 debug: bool = False):
         """
         Initialize the deepfake detector
         
@@ -556,7 +557,10 @@ class DeepfakeImageDetector:
                 - Full Hugging Face model name (e.g., 'prithivMLMods/deepfake-detector-model-v1')
                 - Short name from MODEL_REGISTRY (e.g., 'prithiv-v1', 'dima-vit')
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            debug: Enable debug logging (default: False)
         """
+        self.debug = debug
+        
         # Check if model_name is a short name in registry
         if model_name in MODEL_REGISTRY:
             self.model_key = model_name
@@ -573,7 +577,8 @@ class DeepfakeImageDetector:
         else:
             self.device = torch.device(device)
         
-        logger.info(f"Using device: {self.device}")
+        if self.debug:
+            logger.info(f"Using device: {self.device}")
         
         # Initialize components
         self.processor = None
@@ -586,7 +591,8 @@ class DeepfakeImageDetector:
     def _load_model(self):
         """Load the pre-trained model and processor"""
         try:
-            logger.info(f"Loading model: {self.model_name}")
+            if self.debug:
+                logger.info(f"Loading model: {self.model_name}")
             
             # Load processor and model
             self.processor = AutoImageProcessor.from_pretrained(self.model_name)
@@ -601,7 +607,8 @@ class DeepfakeImageDetector:
                         self.model_name,
                         torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
                     )
-                    logger.info("Using SiglipForImageClassification")
+                    if self.debug:
+                        logger.info("Using SiglipForImageClassification")
                     model_loaded = True
                 except Exception as e:
                     logger.warning(f"Failed to load with SiglipForImageClassification: {e}")
@@ -613,7 +620,8 @@ class DeepfakeImageDetector:
                         self.model_name,
                         torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
                     )
-                    logger.info("Using AutoModelForImageClassification")
+                    if self.debug:
+                        logger.info("Using AutoModelForImageClassification")
                     model_loaded = True
                 except Exception as e:
                     logger.error(f"Failed to load model: {e}")
@@ -629,7 +637,8 @@ class DeepfakeImageDetector:
             else:
                 raise RuntimeError("Failed to load model")
             
-            logger.info(f"Model loaded successfully. Labels: {self.labels}")
+            if self.debug:
+                logger.info(f"Model loaded successfully. Labels: {self.labels}")
             
         except Exception as e:
             logger.error(f"Error loading model: {str(e)}")
@@ -716,8 +725,8 @@ class DeepfakeImageDetector:
             
             # 5. Apply slight edge enhancement
             enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
-            
-            logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
+            if (self.debug):
+                logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
             
         except Exception as e:
             logger.warning(f"Error during image enhancement: {e}. Using original image.")
@@ -989,11 +998,13 @@ class DeepfakeImageDetector:
         """
         results = []
         
-        logger.info(f"Processing batch of {len(image_inputs)} images")
+        if self.debug:
+            logger.info(f"Processing batch of {len(image_inputs)} images")
         
         for i, image_input in enumerate(image_inputs):
             try:
-                logger.info(f"Processing image {i+1}/{len(image_inputs)}")
+                if self.debug:
+                    logger.info(f"Processing image {i+1}/{len(image_inputs)}")
                 result = self.detect(image_input, threshold)
                 results.append(result)
             except Exception as e:
@@ -1035,7 +1046,8 @@ class DeepfakeImageDetector:
             image_files.extend(directory.glob(f"*{ext}"))
             # image_files.extend(directory.glob(f"*{ext.upper()}"))
         
-        logger.info(f"Found {len(image_files)} image files in {directory_path}")
+        if self.debug:
+            logger.info(f"Found {len(image_files)} image files in {directory_path}")
         
         # Convert to strings
         image_paths = [str(img) for img in image_files]
@@ -1065,7 +1077,8 @@ class EnsembleDetector:
     
     def __init__(self, 
                  model_keys: Optional[List[str]] = None,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 debug: bool = False):
         """
         Initialize ensemble detector with multiple models
         
@@ -1073,6 +1086,7 @@ class EnsembleDetector:
             model_keys: List of model keys from MODEL_REGISTRY to use. 
                        If None, uses default HuggingFace models.
             device: Device to run inference on ('cpu', 'cuda', or None for auto-detection)
+            debug: Enable debug logging (default: False)
         
         Example:
             # Use HuggingFace models only
@@ -1083,6 +1097,8 @@ class EnsembleDetector:
                 'prithiv-v1', 'efficientnet_b4', 'xception', 'resnet50'
             ])
         """
+        self.debug = debug
+        
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -1102,7 +1118,9 @@ class EnsembleDetector:
         
         self.model_keys = model_keys
         self.detectors = {}
-        logger.info(f"Initializing ensemble with models: {model_keys}")
+        
+        if self.debug:
+            logger.info(f"Initializing ensemble with models: {model_keys}")
         
         # Load all models
         self._load_models()
@@ -1110,7 +1128,8 @@ class EnsembleDetector:
         if not self.detectors:
             raise RuntimeError("No models could be loaded for ensemble")
         
-        logger.info(f"Ensemble initialized with {len(self.detectors)} models")
+        if self.debug:
+            logger.info(f"Ensemble initialized with {len(self.detectors)} models")
     
     def _load_models(self):
         """Load all specified models"""
@@ -1120,16 +1139,18 @@ class EnsembleDetector:
                 
                 if config['source'] == 'huggingface':
                     # Use existing HuggingFace loading logic
-                    detector = DeepfakeImageDetector(model_name=key, device=str(self.device))
+                    detector = DeepfakeImageDetector(model_name=key, device=str(self.device), debug=self.debug)
                     self.detectors[key] = detector
-                    logger.info(f"✓ Loaded HuggingFace model: {key}")               
+                    if self.debug:
+                        logger.info(f"✓ Loaded HuggingFace model: {key}")               
                  
                     
                 elif config['source'] == 'torchvision':
                     # Load torchvision model
                     model = self._load_torchvision_model(config)
                     self.detectors[key] = self._wrap_pytorch_model(model, key, config)
-                    logger.info(f"✓ Loaded torchvision model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded torchvision model: {key}")
                     
                 elif config['source'] == 'timm':
                     # Load timm model
@@ -1138,7 +1159,8 @@ class EnsembleDetector:
                         continue
                     model = self._load_timm_model(config)
                     self.detectors[key] = self._wrap_pytorch_model(model, key, config)
-                    logger.info(f"✓ Loaded timm model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded timm model: {key}")
                 
                 elif config['source'] == 'nonescape':
                     # Load Nonescape model
@@ -1173,10 +1195,12 @@ class EnsembleDetector:
                     detector = NED(
                         model_path=model_path,
                         use_mini=config['use_mini'],
-                        device=str(self.device)
+                        device=str(self.device),
+                        debug=self.debug
                     )
                     self.detectors[key] = self._wrap_nonescape_detector(detector, key)
-                    logger.info(f"✓ Loaded Nonescape model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded Nonescape model: {key}")
                 
                 elif config['source'] == 'universal_fake_v2':
                     # Load UniversalFakeDetectV2 model
@@ -1192,10 +1216,12 @@ class EnsembleDetector:
                     # Note: Model can load without weights (will warn), so we don't skip if file doesn't exist
                     detector = UniversalFakeDetectV2Detector(
                         model_path=model_path,
-                        device=str(self.device)
+                        device=str(self.device),
+                        debug=self.debug
                     )
                     self.detectors[key] = self._wrap_universal_fake_v2_detector(detector, key)
-                    logger.info(f"✓ Loaded UniversalFakeDetectV2 model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded UniversalFakeDetectV2 model: {key}")
                 
                 elif config['source'] == 'distil_dire':
                     # Load DistilDIRE model
@@ -1233,10 +1259,12 @@ class EnsembleDetector:
                         inference_mode=inference_mode,
                         adm_model_path=adm_model_path,
                         device=str(self.device),
-                        threshold=threshold
+                        threshold=threshold,
+                        debug=self.debug
                     )
                     self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
-                    logger.info(f"✓ Loaded DistilDIRE model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded DistilDIRE model: {key}")
                 
                 elif config['source'] == 'seresnet50':
                     # Load SEResNet-50 model
@@ -1257,10 +1285,12 @@ class EnsembleDetector:
                         model_path=model_path,
                         device=str(self.device),
                         threshold=threshold,
-                        input_size=input_size
+                        input_size=input_size,
+                        debug=self.debug
                     )
                     self.detectors[key] = self._wrap_seresnet50_detector(detector, key)
-                    logger.info(f"✓ Loaded SEResNet-50 model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded SEResNet-50 model: {key}")
                 
                 elif config['source'] == 'mesonet':
                     # Load MesoNet model
@@ -1284,10 +1314,12 @@ class EnsembleDetector:
                         model_path=model_path,
                         device=str(self.device),
                         threshold=threshold,
-                        input_size=input_size
+                        input_size=input_size,
+                        debug=self.debug
                     )
                     self.detectors[key] = self._wrap_mesonet_detector(detector, key)
-                    logger.info(f"✓ Loaded MesoNet model: {key}")
+                    if self.debug:
+                        logger.info(f"✓ Loaded MesoNet model: {key}")
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1396,8 +1428,8 @@ class EnsembleDetector:
                     color_enhancer = ImageEnhance.Color(enhanced)
                     enhanced = color_enhancer.enhance(1.1)
                     enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
-                    
-                    logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
+                    if (self.debug):
+                        logger.info(f"Image enhanced - Blur score: {blur_score:.2f}, Blurred: {is_blurred}")
                 except Exception as e:
                     logger.warning(f"Error during image enhancement: {e}. Using original image.")
                     enhanced = image
