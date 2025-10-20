@@ -2,7 +2,29 @@
 Pydantic models for deepfake detection output
 """
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+
+
+class ExifData(BaseModel):
+    """EXIF metadata from image"""
+    make: Optional[str] = Field(default=None, description="Camera/device manufacturer")
+    model: Optional[str] = Field(default=None, description="Camera/device model")
+    software: Optional[str] = Field(default=None, description="Software used to process image")
+    dateTime: Optional[str] = Field(default=None, description="Date and time image was taken")
+    dateTimeOriginal: Optional[str] = Field(default=None, description="Original date and time")
+    dateTimeDigitized: Optional[str] = Field(default=None, description="Date and time digitized")
+    imageWidth: Optional[int] = Field(default=None, description="Image width in pixels")
+    imageHeight: Optional[int] = Field(default=None, description="Image height in pixels")
+    orientation: Optional[int] = Field(default=None, description="Image orientation")
+    xResolution: Optional[float] = Field(default=None, description="X resolution (DPI)")
+    yResolution: Optional[float] = Field(default=None, description="Y resolution (DPI)")
+    resolutionUnit: Optional[int] = Field(default=None, description="Resolution unit")
+    colorSpace: Optional[int] = Field(default=None, description="Color space")
+    exifVersion: Optional[str] = Field(default=None, description="EXIF version")
+    flashPixVersion: Optional[str] = Field(default=None, description="FlashPix version")
+    gpsInfo: Optional[Dict[str, Any]] = Field(default=None, description="GPS information")
+    additionalData: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional EXIF data")
+    hasExif: bool = Field(default=False, description="Whether EXIF data is present")
 
 
 class IndividualModelResult(BaseModel):
@@ -30,6 +52,7 @@ class ImageDetectionResult(BaseModel):
     averageReal: float = Field(description="Average real score across all models")
     votingMethod: str = Field(description="Voting method used")
     voting: VotingResult = Field(description="Voting breakdown")
+    exifData: Optional[ExifData] = Field(default=None, description="EXIF metadata from image")
     individualModelResults: List[IndividualModelResult] = Field(
         default_factory=list,
         description="Individual results from each model"

@@ -3,8 +3,10 @@ from outputModel.detection_output_model import (
     DetectionOutput,
     ImageDetectionResult,
     VotingResult,
-    IndividualModelResult
+    IndividualModelResult,
+    ExifData
 )
+from utils.exif_extractor import ExifExtractor
 import os 
 import sys
 import json
@@ -157,6 +159,7 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
         
         return {
             'image': image_file,
+            'image_path': image_path,  # Store full path for EXIF extraction
             'ground_truth': 'FAKE' if ground_truth_is_fake else 'REAL',
             'prediction': 'FAKE' if result.is_deepfake else 'REAL',
             'is_correct': is_correct,
@@ -171,6 +174,7 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
         print(f"Error processing image '{image_file}': {e}")
         return {
             'image': image_file,
+            'image_path': image_path,  # Store full path for EXIF extraction
             'ground_truth': 'UNKNOWN',
             'prediction': 'ERROR',
             'is_correct': False,
@@ -250,6 +254,17 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
                 total=len(individual_models)
             )
         
+        # Extract EXIF data
+        exif_data = None
+        image_path = data.get('image_path')
+        if image_path and os.path.exists(image_path):
+            try:
+                exif_dict = ExifExtractor.extract_exif(image_path)
+                exif_data = ExifData(**exif_dict)
+            except Exception as e:
+                # If EXIF extraction fails, use default
+                exif_data = ExifData(hasExif=False, additionalData={'error': str(e)})
+        
         # Create image result
         image_result = ImageDetectionResult(
             imageFile=data.get('image', ''),
@@ -259,6 +274,7 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
             averageReal=data.get('avg_real_score', 0.0),
             votingMethod=voting_method,
             voting=voting,
+            exifData=exif_data,
             individualModelResults=individual_models
         )
         image_results.append(image_result)
