@@ -4,9 +4,12 @@ from outputModel.detection_output_model import (
     ImageDetectionResult,
     VotingResult,
     IndividualModelResult,
-    ExifData
+    ExifData,
+    C2paData,
+    C2paManifestSummary
 )
 from utils.exif_extractor import ExifExtractor
+from utils.c2pa_extractor import C2paExtractor
 import os 
 import sys
 import json
@@ -157,9 +160,21 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
         ground_truth_is_fake = 'fake' in image_file.lower()
         is_correct = result.is_deepfake == ground_truth_is_fake
         
+        # Extract C2PA data for markdown report
+        has_c2pa = False
+        c2pa_info = {}
+        try:
+            c2pa_extractor = C2paExtractor()
+            if c2pa_extractor.available:
+                c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
+                has_c2pa = c2pa_raw.get('hasC2pa', False)
+                c2pa_info = c2pa_raw
+        except Exception:
+            pass  # C2PA extraction is optional, don't fail the whole process
+        
         return {
             'image': image_file,
-            'image_path': image_path,  # Store full path for EXIF extraction
+            'image_path': image_path,  # Store full path for EXIF and C2PA extraction
             'ground_truth': 'FAKE' if ground_truth_is_fake else 'REAL',
             'prediction': 'FAKE' if result.is_deepfake else 'REAL',
             'is_correct': is_correct,
@@ -167,14 +182,16 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
             'voting_summary': result.voting_summary,
             'avg_fake_score': result.average_fake_score,
             'avg_real_score': result.average_real_score,
-            'individual_results': result.individual_results
+            'individual_results': result.individual_results,
+            'has_c2pa': has_c2pa,
+            'c2pa_info': c2pa_info
         }
     except Exception as e:
         image_file = os.path.basename(image_path)
         print(f"Error processing image '{image_file}': {e}")
         return {
             'image': image_file,
-            'image_path': image_path,  # Store full path for EXIF extraction
+            'image_path': image_path,  # Store full path for EXIF and C2PA extraction
             'ground_truth': 'UNKNOWN',
             'prediction': 'ERROR',
             'is_correct': False,
@@ -182,7 +199,9 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
             'voting_summary': str(e),
             'avg_fake_score': 0.0,
             'avg_real_score': 0.0,
-            'individual_results': []
+            'individual_results': [],
+            'has_c2pa': False,
+            'c2pa_info': {}
         }
 
 
@@ -265,6 +284,33 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
                 # If EXIF extraction fails, use default
                 exif_data = ExifData(hasExif=False, additionalData={'error': str(e)})
         
+        # Extract C2PA data
+        c2pa_data = None
+        if image_path and os.path.exists(image_path):
+            try:
+                c2pa_extractor = C2paExtractor()
+                c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
+                
+                # Create C2paManifestSummary if active manifest exists
+                manifest_summary = None
+                if c2pa_raw.get('activeManifest'):
+                    manifest_summary = C2paManifestSummary(**c2pa_raw['activeManifest'])
+                
+                # Create C2paData model
+                c2pa_data = C2paData(
+                    hasC2pa=c2pa_raw.get('hasC2pa', False),
+                    validationState=c2pa_raw.get('validationState'),
+                    activeManifest=manifest_summary,
+                    manifests=c2pa_raw.get('manifests'),
+                    validationResults=c2pa_raw.get('validationResults'),
+                    isEmbedded=c2pa_raw.get('isEmbedded'),
+                    remoteUrl=c2pa_raw.get('remoteUrl'),
+                    error=c2pa_raw.get('error')
+                )
+            except Exception as e:
+                # If C2PA extraction fails, create default with error
+                c2pa_data = C2paData(hasC2pa=False, error=f"C2PA extraction failed: {str(e)}")
+        
         # Create image result
         image_result = ImageDetectionResult(
             imageFile=data.get('image', ''),
@@ -275,6 +321,7 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
             votingMethod=voting_method,
             voting=voting,
             exifData=exif_data,
+            c2paData=c2pa_data,
             individualModelResults=individual_models
         )
         image_results.append(image_result)
@@ -402,6 +449,27 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
                     f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
     
     lines.append("")
+    
+    # C2PA Summary
+    images_with_c2pa = sum(1 for d in results_data if d.get('has_c2pa', False))
+    if images_with_c2pa > 0:
+        lines.append("### 🔐 C2PA Content Credentials Summary")
+        lines.append("")
+        lines.append(f"**Images with C2PA data**: {images_with_c2pa}/{total}")
+        lines.append("")
+        lines.append("| Image | Has C2PA | Validation State | Claim Generator |")
+        lines.append("|-------|----------|------------------|-----------------|")
+        
+        for data in results_data:
+            if data.get('has_c2pa', False):
+                c2pa_info = data.get('c2pa_info', {})
+                validation = c2pa_info.get('validationState', 'N/A')
+                claim_gen = 'N/A'
+                if c2pa_info.get('activeManifest'):
+                    claim_gen = c2pa_info['activeManifest'].get('claimGenerator', 'N/A')
+                lines.append(f"| {data['image']} | ✓ | {validation} | {claim_gen} |")
+        
+        lines.append("")
     
     # Individual Model Results
     lines.append("### 📋 Individual Model Results")

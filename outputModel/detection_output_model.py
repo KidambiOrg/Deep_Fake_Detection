@@ -27,6 +27,30 @@ class ExifData(BaseModel):
     hasExif: bool = Field(default=False, description="Whether EXIF data is present")
 
 
+class C2paManifestSummary(BaseModel):
+    """Summary of C2PA manifest information"""
+    claimGenerator: Optional[str] = Field(default=None, description="Claim generator identifier")
+    title: Optional[str] = Field(default=None, description="Manifest title")
+    format: Optional[str] = Field(default=None, description="Content format")
+    instanceId: Optional[str] = Field(default=None, description="Unique instance identifier")
+    claimGeneratorInfo: Optional[Dict[str, Any]] = Field(default=None, description="Claim generator details")
+    assertions: List[Dict[str, Any]] = Field(default_factory=list, description="List of assertions")
+    ingredients: List[Dict[str, Any]] = Field(default_factory=list, description="List of ingredients")
+    signature: Optional[Dict[str, Any]] = Field(default=None, description="Signature information")
+
+
+class C2paData(BaseModel):
+    """C2PA (Content Credentials) metadata"""
+    hasC2pa: bool = Field(default=False, description="Whether C2PA data is present")
+    validationState: Optional[str] = Field(default=None, description="Validation state (e.g., Valid, Invalid)")
+    activeManifest: Optional[C2paManifestSummary] = Field(default=None, description="Active manifest summary")
+    manifests: Optional[List[str]] = Field(default=None, description="List of manifest identifiers")
+    validationResults: Optional[Dict[str, Any]] = Field(default=None, description="Detailed validation results")
+    isEmbedded: Optional[bool] = Field(default=None, description="Whether manifest is embedded in the asset")
+    remoteUrl: Optional[str] = Field(default=None, description="Remote URL if manifest is stored remotely")
+    error: Optional[str] = Field(default=None, description="Error message if extraction failed")
+
+
 class IndividualModelResult(BaseModel):
     """Individual model detection result"""
     model: str = Field(description="Name of the model")
@@ -53,6 +77,7 @@ class ImageDetectionResult(BaseModel):
     votingMethod: str = Field(description="Voting method used")
     voting: VotingResult = Field(description="Voting breakdown")
     exifData: Optional[ExifData] = Field(default=None, description="EXIF metadata from image")
+    c2paData: Optional[C2paData] = Field(default=None, description="C2PA (Content Credentials) metadata")
     individualModelResults: List[IndividualModelResult] = Field(
         default_factory=list,
         description="Individual results from each model"
