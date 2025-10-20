@@ -12,5 +12,6 @@ huggingface_hub[hf_xet]
 timm>=0.9.0
 safetensors>=0.3.0
 requests>=2.25.0
+pydantic>=2.0.0
 # Optional: For MesoNet Keras model support
 # tensorflow>=2.10.0

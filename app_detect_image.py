@@ -1,6 +1,13 @@
 from detectionLib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult, list_available_models
+from outputModel.detection_output_model import (
+    DetectionOutput,
+    ImageDetectionResult,
+    VotingResult,
+    IndividualModelResult
+)
 import os 
 import sys
+import json
 
 
 def list_available_models_example():    
@@ -173,6 +180,263 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
             'avg_real_score': 0.0,
             'individual_results': []
         }
+
+
+def convert_to_pydantic_model(results_data, voting_method='weighted'):
+    """Convert results data to Pydantic model
+    
+    Args:
+        results_data: List of result dictionaries
+        voting_method: Voting method used
+        
+    Returns:
+        DetectionOutput Pydantic model
+    """
+    image_results = []
+    
+    for data in results_data:
+        # Process individual model results
+        individual_models = []
+        for individual in data.get('individual_results', []):
+            # Extract fake and real scores from the model's scores dictionary
+            fake_score = 0.0
+            real_score = 0.0
+            
+            # Check for various fake label formats
+            for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
+                            'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
+                            'generated', 'Generated', 'synthetic', 'Synthetic', 
+                            'AI', 'ai', 'LABEL_1', '1']:
+                if fake_key in individual.scores:
+                    fake_score = individual.scores[fake_key]
+                    break
+            
+            # Check for various real label formats
+            for real_key in ['human', 'Human', 'HUMAN',
+                            'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
+                            'genuine', 'Genuine', 'LABEL_0', '0']:
+                if real_key in individual.scores:
+                    real_score = individual.scores[real_key]
+                    break
+            
+            # If still no scores found, try to infer from available scores
+            if fake_score == 0.0 and real_score == 0.0 and individual.scores:
+                scores_list = list(individual.scores.values())
+                if len(scores_list) >= 2:
+                    real_score = scores_list[0]
+                    fake_score = scores_list[1]
+            
+            individual_models.append(IndividualModelResult(
+                model=individual.model_name,
+                prediction='FAKE' if individual.is_deepfake else 'REAL',
+                confidence=individual.confidence,
+                fakeScore=fake_score,
+                realScore=real_score
+            ))
+        
+        # Extract voting information
+        voting_summary = data.get('voting_summary', {})
+        if isinstance(voting_summary, dict):
+            voting = VotingResult(
+                fake=voting_summary.get('fake', 0),
+                real=voting_summary.get('real', 0),
+                total=voting_summary.get('total', len(individual_models))
+            )
+        else:
+            # If voting_summary is not a dict, create default voting
+            voting = VotingResult(
+                fake=0,
+                real=0,
+                total=len(individual_models)
+            )
+        
+        # Create image result
+        image_result = ImageDetectionResult(
+            imageFile=data.get('image', ''),
+            prediction=data.get('prediction', 'UNKNOWN'),
+            confidence=data.get('confidence', 0.0),
+            averageFake=data.get('avg_fake_score', 0.0),
+            averageReal=data.get('avg_real_score', 0.0),
+            votingMethod=voting_method,
+            voting=voting,
+            individualModelResults=individual_models
+        )
+        image_results.append(image_result)
+    
+    # Generate markdown content
+    markdown_content = generate_markdown_report(results_data, voting_method)
+    
+    # Create final output
+    output = DetectionOutput(
+        markdown=markdown_content,
+        totalImages=len(results_data),
+        images=image_results
+    )
+    
+    return output
+
+
+def generate_markdown_report(results_data, voting_method='weighted', threshold=0.26):
+    """Generate markdown formatted report from results data
+    
+    Args:
+        results_data: List of result dictionaries
+        voting_method: Voting method used
+        threshold: Threshold value used
+        
+    Returns:
+        Markdown formatted string
+    """
+    if not results_data:
+        return ""
+    
+    lines = []
+    
+    # Header
+    lines.append("# Deepfake Detection Results")
+    lines.append("")
+    
+    # Performance Metrics
+    total = len(results_data)
+    correct = sum(1 for d in results_data if d['is_correct'])
+    accuracy = (correct / total) * 100 if total > 0 else 0
+    
+    # Confusion matrix
+    true_positives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'FAKE')
+    false_positives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'FAKE')
+    true_negatives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'REAL')
+    false_negatives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'REAL')
+    
+    # Calculate precision, recall, F1
+    precision = (true_positives / (true_positives + false_positives)) * 100 if (true_positives + false_positives) > 0 else 0
+    recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
+    f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
+    
+    lines.append("## 📊 Performance Metrics")
+    lines.append("")
+    lines.append(f"**Voting Method**: `{voting_method}`")
+    lines.append("")
+    
+    # Explain voting method
+    if voting_method == 'weighted' or voting_method == 'average':
+        lines.append(f"- Uses **average fake score** across all models (avg fake score >= {threshold} → FAKE)")
+        lines.append(f"- More robust for noisy images than simple majority voting")
+    elif voting_method == 'majority':
+        lines.append(f"- Uses **simple majority** vote (most models agree)")
+    elif voting_method == 'confidence_weighted':
+        lines.append(f"- Weights fake scores by each model's confidence")
+    elif voting_method == 'maximum':
+        lines.append(f"- Uses prediction from model with highest confidence")
+    elif voting_method == 'unanimous':
+        lines.append(f"- All models must agree")
+    elif voting_method == 'adaptive_threshold':
+        lines.append(f"- Adjusts threshold based on prediction variance (disagreement between models)")
+        lines.append(f"- Higher variance → higher threshold needed")
+    elif voting_method == 'median':
+        lines.append(f"- Uses **median fake score** instead of average (more robust to outliers)")
+    elif voting_method == 'robust_majority':
+        lines.append(f"- Excludes extreme outliers before majority voting using IQR method")
+        lines.append(f"- Best for handling models with very different sensitivities")
+    elif voting_method == 'dynamic_consensus':
+        lines.append(f"- Requires higher agreement when models disagree strongly")
+        lines.append(f"- Low disagreement: 50% majority | High disagreement: 75% majority")
+    elif voting_method == 'reliability_weighted':
+        lines.append(f"- Weights votes based on each model's estimated reliability")
+        lines.append(f"- Gives more weight to historically accurate models")
+    elif voting_method == 'bayesian':
+        lines.append(f"- Uses Bayesian inference to combine predictions probabilistically")
+        lines.append(f"- Accounts for model confidence and prior probabilities")
+    elif voting_method == 'entropy_weighted':
+        lines.append(f"- Weights predictions by certainty (low entropy = high weight)")
+        lines.append(f"- More certain predictions get higher influence")
+    elif voting_method == 'consensus_threshold':
+        lines.append(f"- Adapts threshold based on model consensus strength")
+        lines.append(f"- High consensus → lower threshold needed")
+    
+    lines.append("")
+    lines.append(f"**Threshold**: {threshold}")
+    lines.append("")
+    lines.append(f"**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
+    lines.append(f"**Precision**: {precision:.2f}% (of predicted fakes, how many are actually fake)")
+    lines.append(f"**Recall**: {recall:.2f}% (of actual fakes, how many were detected)")
+    lines.append(f"**F1-Score**: {f1_score:.2f}%")
+    lines.append("")
+    
+    lines.append("### Confusion Matrix")
+    lines.append("```")
+    lines.append("                    Predicted")
+    lines.append("                FAKE      REAL")
+    lines.append(f"Actual FAKE     {true_positives:4d}      {false_negatives:4d}")
+    lines.append(f"       REAL     {false_positives:4d}      {true_negatives:4d}")
+    lines.append("```")
+    lines.append("")
+    
+    # Overall Results Table
+    lines.append("## 🎯 Detection Results Summary")
+    lines.append("")
+    lines.append("### Overall Results")
+    lines.append("")
+    lines.append("| Image | Ground Truth | Prediction | ✓/✗ | Confidence | Avg Fake | Avg Real | Voting |")
+    lines.append("|-------|--------------|------------|-----|------------|----------|----------|--------|")
+    
+    for data in results_data:
+        correctness = "✓" if data['is_correct'] else "✗"
+        lines.append(f"| {data['image']} | {data['ground_truth']} | {data['prediction']} | {correctness} | "
+                    f"{data['confidence']:.4f} ({data['confidence']*100:.1f}%) | "
+                    f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
+    
+    lines.append("")
+    
+    # Individual Model Results
+    lines.append("### 📋 Individual Model Results")
+    lines.append("")
+    
+    for data in results_data:
+        if data['individual_results']:
+            correctness_icon = "✓" if data['is_correct'] else "✗"
+            lines.append(f"#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})")
+            lines.append("")
+            lines.append("| Model | Prediction | Confidence | Fake Score | Real Score |")
+            lines.append("|-------|------------|------------|------------|------------|")
+            
+            for individual in data['individual_results']:
+                pred = 'FAKE' if individual.is_deepfake else 'REAL'
+                
+                # Extract fake and real scores from the model's scores dictionary
+                fake_score = 0.0
+                real_score = 0.0
+                
+                # Check for various fake label formats
+                for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
+                                'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
+                                'generated', 'Generated', 'synthetic', 'Synthetic', 
+                                'AI', 'ai', 'LABEL_1', '1']:
+                    if fake_key in individual.scores:
+                        fake_score = individual.scores[fake_key]
+                        break
+                
+                # Check for various real label formats
+                for real_key in ['human', 'Human', 'HUMAN',
+                                'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
+                                'genuine', 'Genuine', 'LABEL_0', '0']:
+                    if real_key in individual.scores:
+                        real_score = individual.scores[real_key]
+                        break
+                
+                # If still no scores found, try to infer from available scores
+                if fake_score == 0.0 and real_score == 0.0 and individual.scores:
+                    scores_list = list(individual.scores.values())
+                    if len(scores_list) >= 2:
+                        real_score = scores_list[0]
+                        fake_score = scores_list[1]
+                
+                lines.append(f"| {individual.model_name} | {pred} | "
+                           f"{individual.confidence:.4f} ({individual.confidence*100:.1f}%) | "
+                           f"{fake_score:.4f} | {real_score:.4f} |")
+            
+            lines.append("")
+    
+    return "\n".join(lines)
 
 
 def display_overall_results_table(results_data):
@@ -417,24 +681,16 @@ def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='we
         debug: Enable debug logging (default: False)
     """
     try:
+        results_data = []
+        
         if os.path.isfile(path):
             # Single image
-            print(f"\n📷 Processing single image: {path}")
             data = process_image_data(path, ensemble, threshold=threshold, voting_method=voting_method)
-            
             if data:
-                # Display results
-                print("\n\n## 🎯 Detection Results")
-                print("\n### Overall Result\n")
-                display_overall_results_table([data])
-                display_individual_model_results([data])
+                results_data.append(data)
                 
         elif os.path.isdir(path):
-            print(f"\n📁 Processing directory: {path}")
-            
             # Collect results from all images
-            results_data = []
-            
             for image_file in os.listdir(path):
                 image_path = os.path.join(path, image_file)
                 if os.path.isfile(image_path):
@@ -442,23 +698,20 @@ def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='we
                     data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
                     if data:
                         results_data.append(data)
-                else:
-                    print(f"Skipping non-file entry: {image_file}")
-            
-            # Calculate and display metrics
-            if results_data:
-                calculate_and_display_metrics(results_data, voting_method=voting_method, threshold=threshold)
-                
-                # Display results in markdown table format
-                print("\n\n## 🎯 Detection Results Summary")
-                print("\n### Overall Results\n")
-                display_overall_results_table(results_data)
-                display_individual_model_results(results_data)
         else:
-            print(f"❌ Error: Path '{path}' does not exist or is not accessible.")
+            print(json.dumps({"error": f"Path '{path}' does not exist or is not accessible."}))
+            return
+        
+        # Convert to Pydantic model and output JSON
+        if results_data:
+            output_model = convert_to_pydantic_model(results_data, voting_method=voting_method)
+            print(output_model.to_json())
+        else:
+            print(json.dumps({"error": "No images processed", "totalImages": 0, "images": []}))
             
     except Exception as e:
-        print(f"❌ Error processing path: {e}")
+        print(json.dumps({"error": f"Error processing path: {str(e)}"}))
+
 
 
 def main(path=None, debug=False):
@@ -469,45 +722,43 @@ def main(path=None, debug=False):
         debug: Enable debug logging (default: False)
     """
     
-    print("Deepfake Detection - Optimized for 90% Accuracy")
-    print("=" * 50)
-    
     try:
         # Configuration
         threshold = 0.26
         voting_method = 'weighted'
         
         # Load ensemble models into memory once at startup
-        print("\n🔄 Loading ensemble models into memory...")
+        if debug:
+            print("Loading ensemble models into memory...", file=sys.stderr)
         ensemble = create_ensemble_detector(debug=debug)
-        print("✅ Models loaded successfully!\n")
+        if debug:
+            print("Models loaded successfully!", file=sys.stderr)
         
         if path is not None:
             # Single execution mode with provided path
             process_path_with_ensemble(path, ensemble, threshold, voting_method, debug)
         else:
             # Interactive loop mode
-            print("\n📝 Interactive Mode")
-            print("=" * 50)
-            print("Enter:")
-            print("  - Path to an image file to analyze")
-            print("  - Path to a directory to analyze all images")
-            print("  - 'exit' or press Enter to quit")
-            print("=" * 50)
+            if debug:
+                print("\nInteractive Mode", file=sys.stderr)
+                print("Enter path to an image file or directory to analyze", file=sys.stderr)
+                print("Enter 'exit' or press Enter to quit", file=sys.stderr)
             
             while True:
-                user_input = input("\n👉 Enter image/directory path (or 'exit'): ").strip()
+                user_input = input("Enter image/directory path (or 'exit'): ").strip()
                 
                 # Check for exit condition
                 if user_input.lower() == 'exit' or user_input == '':
-                    print("\n👋 Exiting deepfake detection. Goodbye!")
+                    if debug:
+                        print("Exiting deepfake detection. Goodbye!", file=sys.stderr)
                     break
                 
                 # Process the provided path
                 process_path_with_ensemble(user_input, ensemble, threshold, voting_method, debug)
         
     except Exception as e:
-        print(f"❌ Error running detection: {e}")
+        print(json.dumps({"error": f"Error running detection: {str(e)}"}))
+
 
 
 def demo_advanced_voting_methods():
