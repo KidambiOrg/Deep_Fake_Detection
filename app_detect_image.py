@@ -13,6 +13,67 @@ from utils.c2pa_extractor import C2paExtractor
 import os 
 import sys
 import json
+from io import BytesIO
+from PIL import Image
+
+
+def process_image(image_bytes):
+    """Process an image from bytes and return detection results
+    
+    Args:
+        image_bytes: Image data as bytes
+        
+    Returns:
+        DetectionOutput Pydantic model with detection results as JSON string
+    """
+    try:
+        # Create ensemble detector
+        ensemble = create_ensemble_detector(debug=False)
+
+        # Convert bytes to PIL Image
+        image = Image.open(BytesIO(image_bytes))
+        
+        # Save temporarily to process (some models require file path)
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            temp_path = temp_file.name
+            image.save(temp_path)
+        
+        try:
+        
+            # Process the image
+            threshold = 0.31
+            voting_method = 'weighted'
+            
+            result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
+            
+            # Create result data
+            data = {
+                'image': 'uploaded_image.png',
+                'image_path': temp_path,
+                'ground_truth': 'UNKNOWN',
+                'prediction': 'FAKE' if result.is_deepfake else 'REAL',
+                'is_correct': False,
+                'confidence': result.confidence,
+                'voting_summary': result.voting_summary,
+                'avg_fake_score': result.average_fake_score,
+                'avg_real_score': result.average_real_score,
+                'individual_results': result.individual_results,
+                'has_c2pa': False,
+                'c2pa_info': {}
+            }
+            
+            # Convert to Pydantic model
+            output_model = convert_to_pydantic_model([data], voting_method=voting_method)
+            return output_model.to_json()
+            
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+                
+    except Exception as e:
+        return json.dumps({"error": f"Error processing image: {str(e)}"})
 
 
 def list_available_models_example():    
@@ -99,7 +160,7 @@ def list_voting_methods():
         for method, description in category_methods.items():
             print(f"| `{method}` | {description} |")
     
-    print(f"\n### 💡 Recommendations by Use Case")
+    print(f"\n### [TIP] Recommendations by Use Case")
     print("| Use Case | Recommended Method | Why |")
     print("|----------|-------------------|-----|")
     print("| General purpose | `reliability_weighted` | Accounts for model strengths |")
@@ -377,7 +438,7 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
     recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
     f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
     
-    lines.append("## 📊 Performance Metrics")
+    lines.append("## [STATS] Performance Metrics")
     lines.append("")
     lines.append(f"**Voting Method**: `{voting_method}`")
     lines.append("")
@@ -437,15 +498,15 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
     lines.append("")
     
     # Overall Results Table
-    lines.append("## 🎯 Detection Results Summary")
+    lines.append("## [TARGET] Detection Results Summary")
     lines.append("")
     lines.append("### Overall Results")
     lines.append("")
-    lines.append("| Image | Ground Truth | Prediction | ✓/✗ | Confidence | Avg Fake | Avg Real | Voting |")
+    lines.append("| Image | Ground Truth | Prediction | [OK]/[FAIL] | Confidence | Avg Fake | Avg Real | Voting |")
     lines.append("|-------|--------------|------------|-----|------------|----------|----------|--------|")
     
     for data in results_data:
-        correctness = "✓" if data['is_correct'] else "✗"
+        correctness = "[OK]" if data['is_correct'] else "[FAIL]"
         lines.append(f"| {data['image']} | {data['ground_truth']} | {data['prediction']} | {correctness} | "
                     f"{data['confidence']:.4f} ({data['confidence']*100:.1f}%) | "
                     f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
@@ -469,7 +530,7 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
                 claim_gen = 'N/A'
                 if c2pa_info.get('activeManifest'):
                     claim_gen = c2pa_info['activeManifest'].get('claimGenerator', 'N/A')
-                lines.append(f"| {data['image']} | ✓ | {validation} | {claim_gen} |")
+                lines.append(f"| {data['image']} | [OK] | {validation} | {claim_gen} |")
         
         lines.append("")
     
@@ -479,7 +540,7 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
     
     for data in results_data:
         if data['individual_results']:
-            correctness_icon = "✓" if data['is_correct'] else "✗"
+            correctness_icon = "[OK]" if data['is_correct'] else "[FAIL]"
             lines.append(f"#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})")
             lines.append("")
             lines.append("| Model | Prediction | Confidence | Fake Score | Real Score |")
@@ -531,11 +592,11 @@ def display_overall_results_table(results_data):
     Args:
         results_data: List of result dictionaries
     """
-    print("| Image | Ground Truth | Prediction | ✓/✗ | Confidence | Avg Fake | Avg Real | Voting |")
+    print("| Image | Ground Truth | Prediction | [OK]/[FAIL] | Confidence | Avg Fake | Avg Real | Voting |")
     print("|-------|--------------|------------|-----|------------|----------|----------|--------|")
     
     for data in results_data:
-        correctness = "✓" if data['is_correct'] else "✗"
+        correctness = "[OK]" if data['is_correct'] else "[FAIL]"
         print(f"| {data['image']} | {data['ground_truth']} | {data['prediction']} | {correctness} | "
               f"{data['confidence']:.4f} ({data['confidence']*100:.1f}%) | "
               f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
@@ -550,7 +611,7 @@ def display_individual_model_results(results_data):
     print("\n### 📋 Individual Model Results\n")
     for data in results_data:
         if data['individual_results']:
-            correctness_icon = "✓" if data['is_correct'] else "✗"
+            correctness_icon = "[OK]" if data['is_correct'] else "[FAIL]"
             print(f"\n#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})\n")
             print("| Model | Prediction | Confidence | Fake Score | Real Score |")
             print("|-------|------------|------------|------------|------------|")
@@ -620,7 +681,7 @@ def calculate_and_display_metrics(results_data, voting_method='weighted', thresh
     recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
     f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
     
-    print("\n\n## 📊 Performance Metrics")
+    print("\n\n## [STATS] Performance Metrics")
     print(f"\n**Voting Method**: `{voting_method}`")
     
     # Explain voting method
@@ -694,7 +755,7 @@ def compare_voting_methods(image_path, ensemble, threshold=0.26):
     print(f"**Ground Truth**: {ground_truth}")
     print(f"**Threshold**: {threshold}")
     
-    print("\n| Voting Method | Prediction | Confidence | ✓/✗ | Notes |")
+    print("\n| Voting Method | Prediction | Confidence | [OK]/[FAIL] | Notes |")
     print("|---------------|------------|------------|-----|-------|")
     
     results = {}
@@ -703,7 +764,7 @@ def compare_voting_methods(image_path, ensemble, threshold=0.26):
             result = ensemble.detect(image_path, threshold=threshold, voting_method=method)
             prediction = 'FAKE' if result.is_deepfake else 'REAL'
             is_correct = result.is_deepfake == ground_truth_is_fake
-            correctness = "✓" if is_correct else "✗"
+            correctness = "[OK]" if is_correct else "[FAIL]"
             
             # Add method-specific notes
             notes = ""
@@ -732,7 +793,7 @@ def compare_voting_methods(image_path, ensemble, threshold=0.26):
             }
             
         except Exception as e:
-            print(f"| {method} | ERROR | 0.000 (0.0%) | ✗ | {str(e)[:30]}... |")
+            print(f"| {method} | ERROR | 0.000 (0.0%) | [FAIL] | {str(e)[:30]}... |")
             results[method] = {'prediction': 'ERROR', 'confidence': 0.0, 'is_correct': False}
     
     # Summary statistics
@@ -852,7 +913,7 @@ def main(path=None, debug=False):
 
 def demo_advanced_voting_methods():
     """Demonstrate all the new advanced voting methods"""
-    print("\n\n🚀 ADVANCED DEEPFAKE DETECTION DEMO")
+    print("\n\n[START] ADVANCED DEEPFAKE DETECTION DEMO")
     print("=" * 80)
     print("This demo showcases the new advanced voting methods for improved accuracy!")
     
@@ -863,7 +924,7 @@ def demo_advanced_voting_methods():
     test_image = "C:\\Kidambi\\WorkRelated\\DeepFake\\sample_images\\real_2.avif"
     
     if os.path.exists(test_image):
-        print(f"\n\n🔍 Testing all voting methods on: {os.path.basename(test_image)}")
+        print(f"\n\n[SEARCH] Testing all voting methods on: {os.path.basename(test_image)}")
         
         # Create ensemble
         ensemble = create_ensemble_detector()
@@ -871,7 +932,7 @@ def demo_advanced_voting_methods():
         # Compare all voting methods
         results = compare_voting_methods(test_image, ensemble, threshold=0.26)
         
-        print(f"\n\n💡 **Key Insights:**")
+        print(f"\n\n[TIP] **Key Insights:**")
         print(f"- The new **reliability_weighted** method accounts for each model's strengths")
         print(f"- **Bayesian** method provides the most sophisticated probabilistic reasoning") 
         print(f"- **Robust_majority** handles outlier models (like overly aggressive ones)")
@@ -879,7 +940,7 @@ def demo_advanced_voting_methods():
         print(f"- **Adaptive_threshold** adjusts sensitivity based on model uncertainty")
         
     else:
-        print(f"\n⚠️ Test image not found at: {test_image}")
+        print(f"\n[WARNING] Test image not found at: {test_image}")
         print(f"Please update the path in the demo function or run with your own image!")
 
 

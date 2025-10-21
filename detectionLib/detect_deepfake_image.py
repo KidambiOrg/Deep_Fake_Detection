@@ -75,13 +75,7 @@ except ImportError:
     SERESNET50_AVAILABLE = False
     logging.warning("SEResNet-50 detector not available.")
 
-# Try to import MesoNet detector
-try:
-    from .detect_deepfake_mesonet import MesoNetDetector
-    MESONET_AVAILABLE = True
-except ImportError:
-    MESONET_AVAILABLE = False
-    logging.warning("MesoNet detector not available.")
+ 
 
 # Try to import EfficientNet-B7 detector
 try:
@@ -462,19 +456,7 @@ MODEL_REGISTRY = {
         'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
         'recommended_threshold': 0.5,  # Optimal threshold based on score distribution analysis
-    },
-    
-    # MesoNet Model
-    'mesonet': {
-        'name': 'MesoNet',
-        'description': 'MesoNet - Lightweight CNN for mesoscopic deepfake detection (compact and fast)',
-        'architecture': 'MesoNet CNN',
-        'source': 'mesonet',
-        'model_path': 'Models/mesonet/mesonet_model.h5',
-        'input_size': 256,
-        'recommended_threshold': 0.5,
-    },
-    
+    },    
     # EfficientNet-B7 Model (Noisy Student)
     'efficientnet-b7-ns': {
         'name': 'EfficientNet-B7-NoisyStudent',
@@ -1161,7 +1143,7 @@ class EnsembleDetector:
                     detector = DeepfakeImageDetector(model_name=key, device=str(self.device), debug=self.debug)
                     self.detectors[key] = detector
                     if self.debug:
-                        logger.info(f"✓ Loaded HuggingFace model: {key}")               
+                        logger.info(f"[OK] Loaded HuggingFace model: {key}")               
                  
                     
                 elif config['source'] == 'torchvision':
@@ -1169,7 +1151,7 @@ class EnsembleDetector:
                     model = self._load_torchvision_model(config)
                     self.detectors[key] = self._wrap_pytorch_model(model, key, config)
                     if self.debug:
-                        logger.info(f"✓ Loaded torchvision model: {key}")
+                        logger.info(f"[OK] Loaded torchvision model: {key}")
                     
                 elif config['source'] == 'timm':
                     # Load timm model
@@ -1179,7 +1161,7 @@ class EnsembleDetector:
                     model = self._load_timm_model(config)
                     self.detectors[key] = self._wrap_pytorch_model(model, key, config)
                     if self.debug:
-                        logger.info(f"✓ Loaded timm model: {key}")
+                        logger.info(f"[OK] Loaded timm model: {key}")
                 
                 elif config['source'] == 'nonescape':
                     # Load Nonescape model
@@ -1219,7 +1201,7 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_nonescape_detector(detector, key)
                     if self.debug:
-                        logger.info(f"✓ Loaded Nonescape model: {key}")
+                        logger.info(f"[OK] Loaded Nonescape model: {key}")
                 
                 elif config['source'] == 'universal_fake_v2':
                     # Load UniversalFakeDetectV2 model
@@ -1240,7 +1222,7 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_universal_fake_v2_detector(detector, key)
                     if self.debug:
-                        logger.info(f"✓ Loaded UniversalFakeDetectV2 model: {key}")
+                        logger.info(f"[OK] Loaded UniversalFakeDetectV2 model: {key}")
                 
                 elif config['source'] == 'distil_dire':
                     # Load DistilDIRE model
@@ -1283,7 +1265,7 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
                     if self.debug:
-                        logger.info(f"✓ Loaded DistilDIRE model: {key}")
+                        logger.info(f"[OK] Loaded DistilDIRE model: {key}")
                 
                 elif config['source'] == 'seresnet50':
                     # Load SEResNet-50 model
@@ -1309,36 +1291,9 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_seresnet50_detector(detector, key)
                     if self.debug:
-                        logger.info(f"✓ Loaded SEResNet-50 model: {key}")
+                        logger.info(f"[OK] Loaded SEResNet-50 model: {key}")
                 
-                elif config['source'] == 'mesonet':
-                    # Load MesoNet model
-                    if not MESONET_AVAILABLE:
-                        logger.warning(f"⚠ Skipping {key}: MesoNet detector not available")
-                        continue
-                    
-                    model_path = config.get('model_path')
-                    input_size = config.get('input_size', 256)
-                    threshold = config.get('recommended_threshold', 0.5)
-                    
-                    # Check if model file exists
-                    if model_path and not os.path.exists(model_path):
-                        logger.warning(f"⚠ MesoNet model not found at {model_path}")
-                        logger.info(f"   To use {key}, download the model:")
-                        logger.info("   python Scripts/download_mesonet_models.py")
-                        logger.info(f"   Or download manually from: https://github.com/muffin-123/DeepFake-Detection-mesonet_model.h5-")
-                        continue
-                    
-                    detector = MesoNetDetector(
-                        model_path=model_path,
-                        device=str(self.device),
-                        threshold=threshold,
-                        input_size=input_size,
-                        debug=self.debug
-                    )
-                    self.detectors[key] = self._wrap_mesonet_detector(detector, key)
-                    if self.debug:
-                        logger.info(f"✓ Loaded MesoNet model: {key}")
+                 
                 
                 elif config['source'] == 'efficientnet-b7':
                     # Load EfficientNet-B7 model
@@ -1362,7 +1317,7 @@ class EnsembleDetector:
                     )
                     self.detectors[key] = self._wrap_efficientnet_b7_detector(detector, key)
                     if self.debug:
-                        logger.info(f"✓ Loaded EfficientNet-B7 model: {key}")
+                        logger.info(f"[OK] Loaded EfficientNet-B7 model: {key}")
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1665,35 +1620,7 @@ class EnsembleDetector:
         
         return SEResNet50Wrapper(detector, model_key)
     
-    def _wrap_mesonet_detector(self, detector, model_key: str):
-        """Wrap MesoNet detector to match DeepfakeImageDetector interface"""
-        class MesoNetWrapper:
-            """Wrapper to make MesoNet detector compatible with DeepfakeImageDetector interface"""
-            
-            def __init__(self, mesonet_detector, model_key):
-                self.mesonet_detector = mesonet_detector
-                self.model_key = model_key
-                self.model_name = mesonet_detector.model_name
-            
-            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
-                      threshold: float = 0.5) -> DeepfakeDetectionResult:
-                """Detect deepfake using MesoNet model"""
-                # Convert MesoNet result to DeepfakeDetectionResult
-                mesonet_result = self.mesonet_detector.detect_single(image_input, threshold)
-                
-                return DeepfakeDetectionResult(
-                    is_deepfake=mesonet_result.is_fake,
-                    confidence=mesonet_result.confidence,
-                    scores={
-                        'Real': mesonet_result.real_probability,
-                        'Fake': mesonet_result.fake_probability
-                    },
-                    processing_time=mesonet_result.processing_time,
-                    image_path=image_input if isinstance(image_input, str) else None,
-                    model_name=self.model_name
-                )
-        
-        return MesoNetWrapper(detector, model_key)
+     
     
     def _wrap_efficientnet_b7_detector(self, detector, model_key: str):
         """Wrap EfficientNet-B7 detector to match DeepfakeImageDetector interface"""

@@ -44,10 +44,10 @@ def download_file(url: str, destination: Path, description: str = "file"):
         
         urllib.request.urlretrieve(url, destination, reporthook=report_progress)
         print()  # New line after progress
-        logger.info(f"✓ Downloaded {description} successfully")
+        logger.info(f"[OK] Downloaded {description} successfully")
         
     except Exception as e:
-        logger.error(f"✗ Failed to download {description}: {e}")
+        logger.error(f"[FAIL] Failed to download {description}: {e}")
         raise
 
 
@@ -124,7 +124,7 @@ def download_mesonet_model(model_dir: str = None):
             f.write(f"  detector = MesoNetDetector(model_path='{model_file}')\n")
             f.write("  result = detector.detect_single('image.jpg')\n")
         
-        logger.info(f"✓ Model info saved to: {info_file}")
+        logger.info(f"[OK] Model info saved to: {info_file}")
         
         # Display file information
         file_size_mb = model_file.stat().st_size / (1024 * 1024)
@@ -302,7 +302,7 @@ Please refer to the original repository for license information.
     with open(readme_path, 'w', encoding='utf-8') as f:
         f.write(readme_content)
     
-    logger.info(f"✓ README created: {readme_path}")
+    logger.info(f"[OK] README created: {readme_path}")
 
 
 def main():
@@ -319,7 +319,7 @@ def main():
         
         logger.info("")
         logger.info("="*60)
-        logger.info("✓ MesoNet Setup Complete!")
+        logger.info("[OK] MesoNet Setup Complete!")
         logger.info("="*60)
         logger.info("")
         logger.info("You can now use MesoNet for deepfake detection!")
@@ -332,10 +332,10 @@ def main():
         logger.info("")
         
     except KeyboardInterrupt:
-        logger.info("\n✗ Download cancelled by user")
+        logger.info("\n[FAIL] Download cancelled by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"✗ Unexpected error: {e}")
+        logger.error(f"[FAIL] Unexpected error: {e}")
         sys.exit(1)
 
 

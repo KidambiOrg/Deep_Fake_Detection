@@ -47,11 +47,11 @@ def download_file(url: str, output_path: str, chunk_size: int = 8192) -> bool:
                         progress = (downloaded_size / total_size) * 100
                         print(f"\rProgress: {progress:.1f}% ({downloaded_size}/{total_size} bytes)", end='')
         
-        print(f"\n✅ Successfully downloaded: {output_path}")
+        print(f"\n[SUCCESS] Successfully downloaded: {output_path}")
         return True
         
     except Exception as e:
-        print(f"\n❌ Error downloading {url}: {e}")
+        print(f"\n[ERROR] Error downloading {url}: {e}")
         return False
 
 def main():
@@ -73,8 +73,8 @@ def main():
         "256x256_diffusion_uncond.pt": "https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_diffusion_uncond.pt"
     }
     
-    print("🚀 Starting DistilDIRE model downloads...")
-    print(f"📁 Models will be saved to: {models_dir}")
+    print("[START] Starting DistilDIRE model downloads...")
+    print(f"[FOLDER] Models will be saved to: {models_dir}")
     
     success_count = 0
     total_count = len(models) + len(adm_models)
@@ -103,7 +103,7 @@ def main():
     
     # Summary
     print("=" * 60)
-    print(f"📊 Download Summary: {success_count}/{total_count} successful")
+    print(f"[STATS] Download Summary: {success_count}/{total_count} successful")
     
     if success_count == total_count:
         print("🎉 All models downloaded successfully!")
@@ -119,7 +119,7 @@ def main():
             size_mb = adm_path.stat().st_size / (1024 * 1024)
             print(f"  • 256x256_diffusion_uncond.pt ({size_mb:.1f} MB) [ADM Diffusion Model]")
     else:
-        print("⚠️  Some downloads failed. Please check the errors above.")
+        print("[WARNING]  Some downloads failed. Please check the errors above.")
         return 1
     
     return 0

@@ -264,18 +264,18 @@ def load_distil_dire_model(
         missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
         
         if missing_keys:
-            print(f"⚠️  Missing keys: {missing_keys}")
+            print(f"WARNING: Missing keys: {missing_keys}")
         if unexpected_keys:
-            print(f"⚠️  Unexpected keys: {unexpected_keys}")
+            print(f"WARNING: Unexpected keys: {unexpected_keys}")
         
         model.eval()
         model.to(device)
         
-        print(f"✅ Successfully loaded DistilDIRE model from {model_path}")
+        print(f"Successfully loaded DistilDIRE model from {model_path}")
         return model
         
     except Exception as e:
-        print(f"❌ Error loading DistilDIRE model from {model_path}: {e}")
+        print(f"ERROR: Failed to load DistilDIRE model from {model_path}: {e}")
         raise
 
 

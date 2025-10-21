@@ -172,7 +172,7 @@ class EfficientNetB7Detector:
                 
                 model.load_state_dict(new_state_dict, strict=False)
                 if self.debug:
-                    logger.info("✓ PyTorch weights loaded successfully")
+                    logger.info("[OK] PyTorch weights loaded successfully")
             
             elif tf_checkpoint_path:
                 # TensorFlow checkpoint found - load pretrained weights from timm instead
@@ -184,7 +184,7 @@ class EfficientNetB7Detector:
                 model = timm.create_model('tf_efficientnet_b7_ns', pretrained=True, num_classes=2)
                 
                 if self.debug:
-                    logger.info("✓ Noisy Student weights loaded from timm")
+                    logger.info("[OK] Noisy Student weights loaded from timm")
                     logger.info("Note: These are ImageNet pretrained weights. For fine-tuned deepfake detection,")
                     logger.info("      convert the TensorFlow checkpoint to PyTorch format.")
             
@@ -197,7 +197,7 @@ class EfficientNetB7Detector:
                 model = timm.create_model('tf_efficientnet_b7_ns', pretrained=True, num_classes=2)
                 
                 if self.debug:
-                    logger.info("✓ Pretrained weights loaded from timm")
+                    logger.info("[OK] Pretrained weights loaded from timm")
             
             # Initialize classifier for binary classification if using pretrained weights
             if hasattr(model, 'classifier') and isinstance(model.classifier, nn.Linear):

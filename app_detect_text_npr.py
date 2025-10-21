@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from detectionLib.detect_deepfake_text_npr import DetectLLMNPR, NPRDetectionResult
-    print("✅ Successfully imported DetectLLM-NPR module")
+    print("[SUCCESS] Successfully imported DetectLLM-NPR module")
 except ImportError as e:
-    print(f"❌ Failed to import DetectLLM-NPR module: {e}")
+    print(f"[ERROR] Failed to import DetectLLM-NPR module: {e}")
     print("Please ensure all dependencies are installed:")
     print("pip install -r requirements.txt")
     sys.exit(1)
@@ -24,7 +24,7 @@ except ImportError as e:
 
 def test_model_recommendations():
     """Test the model recommendation system."""
-    print("\n🎯 Testing Model Recommendations")
+    print("\n[TARGET] Testing Model Recommendations")
     print("-" * 40)
     
     try:
@@ -39,17 +39,17 @@ def test_model_recommendations():
             print(f"  Speed: {config['speed']}")
             print()
         
-        print("✅ Model recommendations test completed")
+        print("[SUCCESS] Model recommendations test completed")
         return True
         
     except Exception as e:
-        print(f"❌ Model recommendations test failed: {e}")
+        print(f"[ERROR] Model recommendations test failed: {e}")
         return False
 
 
 def test_basic_functionality():
     """Test basic functionality with small models."""
-    print("\n🔧 Testing Basic Functionality")
+    print("\n[CONFIG] Testing Basic Functionality")
     print("-" * 40)
     
     # Use smaller models for faster testing
@@ -61,7 +61,7 @@ def test_basic_functionality():
             perturbation_model="t5-small",  # Smaller model for faster testing
             random_seed=42  # For reproducible results
         )
-        print("✅ Detector initialized successfully")
+        print("[SUCCESS] Detector initialized successfully")
         
         # Test with a simple text
         test_text = "The quick brown fox jumps over the lazy dog. This is a simple test sentence."
@@ -77,7 +77,7 @@ def test_basic_functionality():
         )
         end_time = time.time()
         
-        print("✅ Detection completed successfully")
+        print("[SUCCESS] Detection completed successfully")
         print(f"   Result: {'AI-generated' if result.is_ai_generated else 'Human-written'}")
         print(f"   NPR Score: {result.npr_score:.4f}")
         print(f"   Confidence: {result.confidence:.4f}")
@@ -87,7 +87,7 @@ def test_basic_functionality():
         return True
         
     except Exception as e:
-        print(f"❌ Basic functionality test failed: {e}")
+        print(f"[ERROR] Basic functionality test failed: {e}")
         return False
 
 
@@ -121,17 +121,17 @@ def test_perturbation_generation():
             for i, perturbed in enumerate(perturbations[:3], 1):
                 print(f"  {i}. {perturbed}")
         
-        print("✅ Perturbation generation test completed")
+        print("[SUCCESS] Perturbation generation test completed")
         return True
         
     except Exception as e:
-        print(f"❌ Perturbation generation test failed: {e}")
+        print(f"[ERROR] Perturbation generation test failed: {e}")
         return False
 
 
 def test_log_probability_computation():
     """Test log probability computation."""
-    print("\n📊 Testing Log Probability Computation")
+    print("\n[STATS] Testing Log Probability Computation")
     print("-" * 40)
     
     try:
@@ -151,11 +151,11 @@ def test_log_probability_computation():
             log_prob = detector.compute_log_probability(text)
             print(f"  '{text}' -> {log_prob:.4f}")
         
-        print("✅ Log probability computation test completed")
+        print("[SUCCESS] Log probability computation test completed")
         return True
         
     except Exception as e:
-        print(f"❌ Log probability computation test failed: {e}")
+        print(f"[ERROR] Log probability computation test failed: {e}")
         return False
 
 
@@ -193,7 +193,7 @@ def interactive_test():
             )
             
             prediction = "🤖 AI-generated" if result.is_ai_generated else "👤 Human-written"
-            print(f"\n📊 Analysis Result:")
+            print(f"\n[STATS] Analysis Result:")
             print(f"   Prediction: {prediction}")
             print(f"   NPR Score: {result.npr_score:+.4f}")
             print(f"   Confidence: {result.confidence:.4f}")
@@ -212,12 +212,12 @@ def interactive_test():
             print(f"   Interpretation: {interpretation}")
     
     except Exception as e:
-        print(f"❌ Interactive test failed: {e}")
+        print(f"[ERROR] Interactive test failed: {e}")
 
 
 def main():
     """Run all tests."""
-    print("🧪 DetectLLM-NPR Test Suite")
+    print("[TEST] DetectLLM-NPR Test Suite")
     print("=" * 50)
     
     # Run tests
@@ -236,11 +236,11 @@ def main():
         try:
             if test_func():
                 passed += 1
-                print(f"✅ {test_name} test PASSED")
+                print(f"[SUCCESS] {test_name} test PASSED")
             else:
-                print(f"❌ {test_name} test FAILED")
+                print(f"[ERROR] {test_name} test FAILED")
         except Exception as e:
-            print(f"❌ {test_name} test ERROR: {e}")
+            print(f"[ERROR] {test_name} test ERROR: {e}")
     
     print(f"\n📋 Test Summary")
     print("=" * 30)
@@ -257,7 +257,7 @@ def main():
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
     else:
-        print("⚠️  Some tests failed. Please check the error messages above.")
+        print("[WARNING]  Some tests failed. Please check the error messages above.")
         print("\nPossible issues:")
         print("1. Missing dependencies - run: pip install -r requirements.txt")
         print("2. Insufficient GPU memory - the models will fallback to CPU")
@@ -271,6 +271,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋 Test interrupted by user. Goodbye!")
     except Exception as e:
-        print(f"❌ Test suite failed: {e}")
+        print(f"[ERROR] Test suite failed: {e}")
         import traceback
         traceback.print_exc()

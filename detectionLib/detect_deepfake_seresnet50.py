@@ -262,12 +262,12 @@ def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
                 # Try loading with weights_only=True first (safer), fall back to False if needed
                 try:
                     pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=True)
-                    logger.info("✓ Loaded weights successfully with weights_only=True")
+                    logger.info("[OK] Loaded weights successfully with weights_only=True")
                 except Exception as e:
                     logger.warning(f"Failed to load with weights_only=True: {e}")
                     logger.info("Retrying with weights_only=False (you trust this file from Models folder)")
                     pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=False)
-                    logger.info("✓ Loaded weights successfully with weights_only=False")
+                    logger.info("[OK] Loaded weights successfully with weights_only=False")
                 
                 if num_classes != 1000:
                     # Copy all layers except the final classifier for binary classification
@@ -275,10 +275,10 @@ def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
                     pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and 'fc' not in k}
                     model_dict.update(pretrained_dict)
                     model.load_state_dict(model_dict)
-                    logger.info(f"✓ Adapted model for {num_classes} classes (binary classification)")
+                    logger.info(f"[OK] Adapted model for {num_classes} classes (binary classification)")
                 else:
                     model.load_state_dict(pretrained_dict)
-                    logger.info(f"✓ Loaded model with {num_classes} classes")
+                    logger.info(f"[OK] Loaded model with {num_classes} classes")
         except Exception as e:
             logger.warning(f"Could not load pretrained weights: {e}")
     

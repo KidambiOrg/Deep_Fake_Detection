@@ -90,7 +90,7 @@ def download_seresnet50_model(model_dir: str = None):
             f.write("- seresnet50_complete_model.pth: Complete model (easier to load)\n")
             f.write("- model_info.txt: This information file\n")
         
-        logger.info("✅ SEResNet-50 model downloaded successfully!")
+        logger.info("[SUCCESS] SEResNet-50 model downloaded successfully!")
         logger.info(f"Model files saved in: {model_dir_path}")
         
         # Display model information
@@ -102,7 +102,7 @@ def download_seresnet50_model(model_dir: str = None):
         return model_path, complete_model_path
         
     except Exception as e:
-        logger.error(f"❌ Error downloading SEResNet-50 model: {str(e)}")
+        logger.error(f"[ERROR] Error downloading SEResNet-50 model: {str(e)}")
         logger.error("Make sure you have internet connection and the required dependencies.")
         sys.exit(1)
 
@@ -122,10 +122,10 @@ def main():
         logger.info("\nYou can now use SEResNet-50 for deepfake detection!")
         
     except KeyboardInterrupt:
-        logger.info("\n❌ Download cancelled by user")
+        logger.info("\n[ERROR] Download cancelled by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {str(e)}")
+        logger.error(f"[ERROR] Unexpected error: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":

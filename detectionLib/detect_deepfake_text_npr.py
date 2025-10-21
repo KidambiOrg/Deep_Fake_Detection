@@ -721,7 +721,7 @@ def main():
             perturbation_strategy="mixed"
         )
         
-        print(f"\n📊 NPR Detection Results:")
+        print(f"\n[STATS] NPR Detection Results:")
         print(f"   Prediction: {'🤖 AI-generated' if result.is_ai_generated else '👤 Human-written'}")
         print(f"   NPR Score: {result.npr_score:+.4f}")
         print(f"   Confidence: {result.confidence:.4f}")
@@ -751,6 +751,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERROR] Error: {e}")
         import traceback
         traceback.print_exc()

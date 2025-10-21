@@ -19,11 +19,11 @@ for root, dirs, files in os.walk('.'):
 for cache_dir in cache_dirs:
     try:
         shutil.rmtree(cache_dir)
-        print(f"  ✓ Removed: {cache_dir}")
+        print(f"  [OK] Removed: {cache_dir}")
     except Exception as e:
-        print(f"  ✗ Failed to remove {cache_dir}: {e}")
+        print(f"  [FAIL] Failed to remove {cache_dir}: {e}")
 
-print(f"\n✅ Cleared {len(cache_dirs)} cache directories")
+print(f"\n[SUCCESS] Cleared {len(cache_dirs)} cache directories")
 print("\n" + "=" * 60)
 print("Now restart your detection script to use the updated code!")
 print("=" * 60)

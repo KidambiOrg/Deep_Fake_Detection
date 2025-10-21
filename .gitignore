@@ -7,7 +7,16 @@ __pycache__/
 *.so
 
 # Deep Fake models director
-Models/
+Models/ 
+Tests/comprehensive_voting_analysis.py
+Tests/enhanced_models.py
+Tests/evaluate_all_models.py
+Tests/example_nonescape_ensemble.py
+Tests/test_efficientnet_b7_integration.py
+Tests/test_models_comparison.py
+Tests/test_multiple_inputs.py
+Tests/test_nonescape_model.py
+Tests/test_seresnet50_integration.py
 
 # Distribution / packaging
 .Python
@@ -189,7 +198,7 @@ cython_debug/
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
 #  and can be added to the global gitignore or merged into this file. However, if you prefer, 
 #  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
 
 # Ruff stuff:
 .ruff_cache/
@@ -208,3 +217,18 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Azure Functions artifacts
+bin
+obj
+appsettings.json
+local.settings.json
+
+# Azurite artifacts
+__blobstorage__
+__queuestorage__
+__azurite_db*__.json
+
+.python_packages
+ 
+
