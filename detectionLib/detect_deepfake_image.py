@@ -83,6 +83,14 @@ except ImportError:
     MESONET_AVAILABLE = False
     logging.warning("MesoNet detector not available.")
 
+# Try to import EfficientNet-B7 detector
+try:
+    from .detect_deepfake_efficientnet_b7 import EfficientNetB7Detector
+    EFFICIENTNET_B7_AVAILABLE = True
+except ImportError:
+    EFFICIENTNET_B7_AVAILABLE = False
+    logging.warning("EfficientNet-B7 detector not available.")
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -388,7 +396,7 @@ MODEL_REGISTRY = {
         'model_type': 'distil_dire',
         'inference_mode': 'img_only',  # TEST: Changed from 'full' to debug epsilon issues
         'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.35,
+        'recommended_threshold': 0.5,
     },
     # Debug version with full mode
     'distil-dire-celebahq-full': {
@@ -444,7 +452,7 @@ MODEL_REGISTRY = {
         'source': 'seresnet50',
         'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
-        'recommended_threshold': 0.35,  # Optimal threshold for adapted pretrained model
+        'recommended_threshold': 0.5,  # Optimal threshold for adapted pretrained model
     },
     'seresnet50-pretrained': {
         'name': 'SEResNet-50-Pretrained',
@@ -453,7 +461,7 @@ MODEL_REGISTRY = {
         'source': 'seresnet50',
         'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
         'input_size': 224,
-        'recommended_threshold': 0.35,  # Optimal threshold based on score distribution analysis
+        'recommended_threshold': 0.5,  # Optimal threshold based on score distribution analysis
     },
     
     # MesoNet Model
@@ -464,6 +472,17 @@ MODEL_REGISTRY = {
         'source': 'mesonet',
         'model_path': 'Models/mesonet/mesonet_model.h5',
         'input_size': 256,
+        'recommended_threshold': 0.5,
+    },
+    
+    # EfficientNet-B7 Model (Noisy Student)
+    'efficientnet-b7-ns': {
+        'name': 'EfficientNet-B7-NoisyStudent',
+        'description': 'EfficientNet-B7 with Noisy Student weights (DFDC 3rd place solution - high accuracy)',
+        'architecture': 'EfficientNet-B7',
+        'source': 'efficientnet-b7',
+        'model_path': 'Models/EfficientNet-B7/noisy_student_efficientnet-b7',  # Local weights directory
+        'input_size': 224,
         'recommended_threshold': 0.5,
     },
 }
@@ -1320,6 +1339,30 @@ class EnsembleDetector:
                     self.detectors[key] = self._wrap_mesonet_detector(detector, key)
                     if self.debug:
                         logger.info(f"✓ Loaded MesoNet model: {key}")
+                
+                elif config['source'] == 'efficientnet-b7':
+                    # Load EfficientNet-B7 model
+                    if not EFFICIENTNET_B7_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: EfficientNet-B7 detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    input_size = config.get('input_size', 224)
+                    
+                    # Check if fine-tuned model file exists (optional)
+                    if model_path and not os.path.exists(model_path):
+                        logger.warning(f"⚠ EfficientNet-B7 fine-tuned model not found at {model_path}, will use pretrained Noisy Student weights")
+                        model_path = None
+                    
+                    detector = EfficientNetB7Detector(
+                        model_path=model_path,
+                        device=str(self.device),
+                        input_size=input_size,
+                        debug=self.debug
+                    )
+                    self.detectors[key] = self._wrap_efficientnet_b7_detector(detector, key)
+                    if self.debug:
+                        logger.info(f"✓ Loaded EfficientNet-B7 model: {key}")
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1652,6 +1695,33 @@ class EnsembleDetector:
         
         return MesoNetWrapper(detector, model_key)
     
+    def _wrap_efficientnet_b7_detector(self, detector, model_key: str):
+        """Wrap EfficientNet-B7 detector to match DeepfakeImageDetector interface"""
+        class EfficientNetB7Wrapper:
+            """Wrapper to make EfficientNet-B7 detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, efficientnet_b7_detector, model_key):
+                self.efficientnet_b7_detector = efficientnet_b7_detector
+                self.model_key = model_key
+                self.model_name = efficientnet_b7_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using EfficientNet-B7 model"""
+                # Convert EfficientNet-B7 result to DeepfakeDetectionResult
+                efficientnet_result = self.efficientnet_b7_detector.detect(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=efficientnet_result.is_deepfake,
+                    confidence=efficientnet_result.confidence,
+                    scores=efficientnet_result.scores,
+                    processing_time=efficientnet_result.processing_time,
+                    image_path=efficientnet_result.image_path,
+                    model_name=self.model_name
+                )
+        
+        return EfficientNetB7Wrapper(detector, model_key)
+    
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
                threshold: float = 0.5,
@@ -1867,6 +1937,7 @@ class EnsembleDetector:
             # These weights are based on general performance characteristics
             model_weights = {
                 'nonescape-full': 0.92,           # High reliability for general detection
+                'efficientnet-b7-ns': 0.91,       # DFDC 3rd place solution - excellent for deepfakes
                 'distil-dire-celebahq': 0.90,     # Excellent for face images  
                 'distil-dire-eps-imagenet': 0.88, # Good general purpose
                 'dima-vit': 0.85,                 # Vision transformer, good accuracy

@@ -135,6 +135,8 @@ def create_ensemble_detector(debug=False):
             # 'mesonet',                 # Compact and fast, good for faces
             # 'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
+            # EfficientNet-B7 with Noisy Student (DFDC 3rd place solution)
+            'efficientnet-b7-ns',      # High accuracy, larger model - excellent for deepfakes
         ],
         debug=debug
     )
@@ -808,7 +810,7 @@ def main(path=None, debug=False):
     
     try:
         # Configuration
-        threshold = 0.26
+        threshold = 0.31
         voting_method = 'weighted'
         
         # Load ensemble models into memory once at startup
