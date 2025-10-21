@@ -1799,9 +1799,9 @@ class EnsembleDetector:
                 confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
         
         elif voting_method == 'weighted':
-            # Use average fake score compared to threshold
-            # This is more robust for noisy images
-            is_deepfake = avg_fake_score >= threshold
+            # Use average scores comparison - predict based on which score is higher
+            # More robust approach that considers both fake and real scores
+            is_deepfake = avg_fake_score > avg_real_score
             
             # Calculate confidence based on models that agree with the final prediction
             # This better represents the ensemble's certainty

@@ -72,7 +72,7 @@ def list_voting_methods():
     methods = {
         "Basic Methods": {
             "majority": "Simple majority vote - most models agree wins",
-            "weighted": "Average fake score vs threshold - robust for noisy images",
+            "weighted": "Compares average fake vs real scores - robust and balanced",
             "average": "Same as weighted method",
             "unanimous": "All models must agree - very conservative",
             "maximum": "Use prediction from most confident model",
@@ -384,7 +384,7 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
     
     # Explain voting method
     if voting_method == 'weighted' or voting_method == 'average':
-        lines.append(f"- Uses **average fake score** across all models (avg fake score >= {threshold} → FAKE)")
+        lines.append(f"- Compares **average fake score vs average real score** (avg fake > avg real → FAKE)")
         lines.append(f"- More robust for noisy images than simple majority voting")
     elif voting_method == 'majority':
         lines.append(f"- Uses **simple majority** vote (most models agree)")
