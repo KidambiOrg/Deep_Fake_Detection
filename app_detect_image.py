@@ -839,6 +839,9 @@ def main(path=None, debug=False):
                         print("Exiting deepfake detection. Goodbye!", file=sys.stderr)
                     break
                 
+                # Strip quotes from the path (handles both single and double quotes)
+                user_input = user_input.strip('"').strip("'")
+                
                 # Process the provided path
                 process_path_with_ensemble(user_input, ensemble, threshold, voting_method, debug)
         
@@ -885,6 +888,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         path_arg = sys.argv[1]
         
+       
         # Special commands
         if path_arg.lower() == 'demo':
             demo_advanced_voting_methods()
