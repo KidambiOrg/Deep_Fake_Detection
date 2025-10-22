@@ -194,13 +194,7 @@ def list_available_models_example():
         if info.get('source') == 'seresnet50':
             print(f"| {key} | {info['name']} | {info['architecture']} | {info['description']} |")
     
-    print("\n### MesoNet Models\n")
-    print("| Key | Name | Architecture | Description |")
-    print("|-----|------|--------------|-------------|")
-    
-    for key, info in models.items():
-        if info.get('source') == 'mesonet':
-            print(f"| {key} | {info['name']} | {info['architecture']} | {info['description']} |")
+   
 
 
 def list_voting_methods():
@@ -824,87 +818,6 @@ def calculate_and_display_metrics(results_data, voting_method='weighted', thresh
     print(f"```")
 
 
-def compare_voting_methods(image_path, ensemble, threshold=0.26):
-    """Compare all voting methods on a single image"""
-    print(f"\n\n## 🔬 Voting Method Comparison for: {os.path.basename(image_path)}")
-    print("=" * 80)
-    
-    # All available voting methods
-    voting_methods = [
-        'majority', 'weighted', 'confidence_weighted', 'unanimous', 'maximum',
-        'adaptive_threshold', 'median', 'robust_majority', 'dynamic_consensus',
-        'reliability_weighted', 'bayesian', 'entropy_weighted', 'consensus_threshold'
-    ]
-    
-    # Ground truth from filename
-    image_file = os.path.basename(image_path)
-    ground_truth_is_fake = 'fake' in image_file.lower()
-    ground_truth = 'FAKE' if ground_truth_is_fake else 'REAL'
-    
-    print(f"**Ground Truth**: {ground_truth}")
-    print(f"**Threshold**: {threshold}")
-    
-    print("\n| Voting Method | Prediction | Confidence | [OK]/[FAIL] | Notes |")
-    print("|---------------|------------|------------|-----|-------|")
-    
-    results = {}
-    for method in voting_methods:
-        try:
-            result = ensemble.detect(image_path, threshold=threshold, voting_method=method)
-            prediction = 'FAKE' if result.is_deepfake else 'REAL'
-            is_correct = result.is_deepfake == ground_truth_is_fake
-            correctness = "[OK]" if is_correct else "[FAIL]"
-            
-            # Add method-specific notes
-            notes = ""
-            if method == 'majority':
-                votes = result.voting_summary
-                notes = f"Votes: {votes['fake']}F-{votes['real']}R"
-            elif method in ['weighted', 'average']:
-                notes = f"Avg fake: {result.average_fake_score:.3f}"
-            elif method == 'maximum':
-                max_conf = max(r.confidence for r in result.individual_results)
-                notes = f"Max conf: {max_conf:.3f}"
-            elif method == 'bayesian':
-                notes = f"Posterior: {result.confidence:.3f}"
-            elif method == 'reliability_weighted':
-                notes = "Model weights applied"
-            elif method == 'robust_majority':
-                notes = "Outliers filtered"
-            
-            print(f"| {method} | {prediction} | {result.confidence:.3f} ({result.confidence*100:.1f}%) | {correctness} | {notes} |")
-            
-            results[method] = {
-                'prediction': prediction,
-                'confidence': result.confidence,
-                'is_correct': is_correct,
-                'result': result
-            }
-            
-        except Exception as e:
-            print(f"| {method} | ERROR | 0.000 (0.0%) | [FAIL] | {str(e)[:30]}... |")
-            results[method] = {'prediction': 'ERROR', 'confidence': 0.0, 'is_correct': False}
-    
-    # Summary statistics
-    correct_predictions = sum(1 for r in results.values() if r['is_correct'])
-    total_methods = len([r for r in results.values() if r['prediction'] != 'ERROR'])
-    
-    print(f"\n**Consensus**: {correct_predictions}/{total_methods} methods correct ({correct_predictions/total_methods*100:.1f}%)")
-    
-    # Find best and worst performing methods
-    if results:
-        best_methods = [method for method, data in results.items() 
-                       if data['is_correct'] and data['prediction'] != 'ERROR']
-        worst_methods = [method for method, data in results.items() 
-                        if not data['is_correct'] and data['prediction'] != 'ERROR']
-        
-        if best_methods:
-            print(f"**Correct Methods**: {', '.join(best_methods)}")
-        if worst_methods:
-            print(f"**Incorrect Methods**: {', '.join(worst_methods)}")
-    
-    return results
-
 
 def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='weighted', debug=False):
     """Process a single image or directory with pre-loaded ensemble
@@ -1000,39 +913,6 @@ def main(path=None, debug=False):
 
 
 
-def demo_advanced_voting_methods():
-    """Demonstrate all the new advanced voting methods"""
-    print("\n\n[START] ADVANCED DEEPFAKE DETECTION DEMO")
-    print("=" * 80)
-    print("This demo showcases the new advanced voting methods for improved accuracy!")
-    
-    # Show all available voting methods
-    list_voting_methods()
-    
-    # Example image path - update this to your test image
-    test_image = "C:\\Kidambi\\WorkRelated\\DeepFake\\sample_images\\real_2.avif"
-    
-    if os.path.exists(test_image):
-        print(f"\n\n[SEARCH] Testing all voting methods on: {os.path.basename(test_image)}")
-        
-        # Create ensemble
-        ensemble = create_ensemble_detector()
-        
-        # Compare all voting methods
-        results = compare_voting_methods(test_image, ensemble, threshold=0.26)
-        
-        print(f"\n\n[TIP] **Key Insights:**")
-        print(f"- The new **reliability_weighted** method accounts for each model's strengths")
-        print(f"- **Bayesian** method provides the most sophisticated probabilistic reasoning") 
-        print(f"- **Robust_majority** handles outlier models (like overly aggressive ones)")
-        print(f"- **Dynamic_consensus** requires stronger agreement when models disagree")
-        print(f"- **Adaptive_threshold** adjusts sensitivity based on model uncertainty")
-        
-    else:
-        print(f"\n[WARNING] Test image not found at: {test_image}")
-        print(f"Please update the path in the demo function or run with your own image!")
-
-
 if __name__ == "__main__":
     # Check if argument is provided via command line
     if len(sys.argv) > 1:
@@ -1040,9 +920,7 @@ if __name__ == "__main__":
         
        
         # Special commands
-        if path_arg.lower() == 'demo':
-            demo_advanced_voting_methods()
-        elif path_arg.lower() == 'methods':
+        if path_arg.lower() == 'methods':
             list_voting_methods()
         elif path_arg.lower() == 'models':
             list_available_models_example()
