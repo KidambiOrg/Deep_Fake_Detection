@@ -8,6 +8,7 @@ __pycache__/
 
 # Deep Fake models director
 Models/ 
+Data/LLM.csv
 Tests/comprehensive_voting_analysis.py
 Tests/enhanced_models.py
 Tests/evaluate_all_models.py
@@ -231,4 +232,4 @@ __azurite_db*__.json
 
 .python_packages
  
-
+create_sample_dataset.py
