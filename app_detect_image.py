@@ -119,8 +119,9 @@ def process_image(image_bytes):
         try:
         
             # Process the image
-            threshold = 0.31
+            threshold = 0.26
             voting_method = 'weighted'
+        
             
             result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
             
