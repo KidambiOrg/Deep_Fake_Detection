@@ -433,9 +433,14 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
                 c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
                 
                 # Create C2paManifestSummary if active manifest exists
+                # Note: activeManifest is now a String (label), not an object
+                # The actual manifest data is in manifests[activeManifest]
                 manifest_summary = None
-                if c2pa_raw.get('activeManifest'):
-                    manifest_summary = C2paManifestSummary(**c2pa_raw['activeManifest'])
+                active_manifest_label = c2pa_raw.get('activeManifest')
+                if active_manifest_label and isinstance(active_manifest_label, str):
+                    manifests_dict = c2pa_raw.get('manifests', {})
+                    if active_manifest_label in manifests_dict:
+                        manifest_summary = C2paManifestSummary(**manifests_dict[active_manifest_label])
                 
                 # Create C2paData model
                 c2pa_data = C2paData(
@@ -444,6 +449,7 @@ def convert_to_pydantic_model(results_data, voting_method='weighted'):
                     activeManifest=manifest_summary,
                     manifests=c2pa_raw.get('manifests'),
                     validationResults=c2pa_raw.get('validationResults'),
+                    validationStatus=c2pa_raw.get('validationStatus'),
                     isEmbedded=c2pa_raw.get('isEmbedded'),
                     remoteUrl=c2pa_raw.get('remoteUrl'),
                     error=c2pa_raw.get('error')
@@ -606,8 +612,13 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
                 c2pa_info = data.get('c2pa_info', {})
                 validation = c2pa_info.get('validationState', 'N/A')
                 claim_gen = 'N/A'
-                if c2pa_info.get('activeManifest'):
-                    claim_gen = c2pa_info['activeManifest'].get('claimGenerator', 'N/A')
+                # activeManifest is now a String (label), get actual manifest from manifests dict
+                active_manifest_label = c2pa_info.get('activeManifest')
+                if active_manifest_label and isinstance(active_manifest_label, str):
+                    manifests = c2pa_info.get('manifests', {})
+                    if active_manifest_label in manifests:
+                        active_manifest_data = manifests[active_manifest_label]
+                        claim_gen = active_manifest_data.get('claimGenerator', 'N/A')
                 lines.append(f"| {data['image']} | [OK] | {validation} | {claim_gen} |")
         
         lines.append("")

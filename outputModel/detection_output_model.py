@@ -40,12 +40,13 @@ class C2paManifestSummary(BaseModel):
 
 
 class C2paData(BaseModel):
-    """C2PA (Content Credentials) metadata"""
+    """C2PA (Content Credentials) metadata per C2PA Reader JSON spec"""
     hasC2pa: bool = Field(default=False, description="Whether C2PA data is present")
-    validationState: Optional[str] = Field(default=None, description="Validation state (e.g., Valid, Invalid)")
+    validationState: Optional[str] = Field(default=None, description="Validation state (Invalid/Valid/Trusted)")
     activeManifest: Optional[C2paManifestSummary] = Field(default=None, description="Active manifest summary")
-    manifests: Optional[List[str]] = Field(default=None, description="List of manifest identifiers")
-    validationResults: Optional[Dict[str, Any]] = Field(default=None, description="Detailed validation results")
+    manifests: Optional[Dict[str, Any]] = Field(default=None, description="HashMap of all manifests (label -> manifest data)")
+    validationResults: Optional[Dict[str, Any]] = Field(default=None, description="ValidationResults with StatusCodes")
+    validationStatus: Optional[List[str]] = Field(default=None, description="Array of ValidationStatus codes")
     isEmbedded: Optional[bool] = Field(default=None, description="Whether manifest is embedded in the asset")
     remoteUrl: Optional[str] = Field(default=None, description="Remote URL if manifest is stored remotely")
     error: Optional[str] = Field(default=None, description="Error message if extraction failed")
@@ -75,13 +76,13 @@ class ImageDetectionResult(BaseModel):
     averageFake: float = Field(description="Average fake score across all models")
     averageReal: float = Field(description="Average real score across all models")
     votingMethod: str = Field(description="Voting method used")
-    voting: VotingResult = Field(description="Voting breakdown")
-    exifData: Optional[ExifData] = Field(default=None, description="EXIF metadata from image")
-    c2paData: Optional[C2paData] = Field(default=None, description="C2PA (Content Credentials) metadata")
+    voting: VotingResult = Field(description="Voting breakdown")   
     individualModelResults: List[IndividualModelResult] = Field(
         default_factory=list,
         description="Individual results from each model"
     )
+    exifData: Optional[ExifData] = Field(default=None, description="EXIF metadata from image")
+    c2paData: Optional[C2paData] = Field(default=None, description="C2PA (Content Credentials) metadata")
 
 
 class DetectionOutput(BaseModel):
