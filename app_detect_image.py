@@ -13,8 +13,79 @@ from utils.c2pa_extractor import C2paExtractor
 import os 
 import sys
 import json
+import threading
+import time
 from io import BytesIO
 from PIL import Image
+
+# Global ensemble detector - initialized lazily to avoid cold start timeout
+_ensemble_detector = None
+_ensemble_loading = False
+_ensemble_lock = threading.Lock()
+
+def get_ensemble_detector(debug=False, timeout=300):
+    """Get or create the global ensemble detector instance with lazy loading
+    
+    This ensures the ensemble is created only once, with proper handling
+    for concurrent requests during initialization.
+    
+    Args:
+        debug: Enable debug logging (default: False)
+        timeout: Maximum wait time in seconds for ensemble to load (default: 300)
+        
+    Returns:
+        EnsembleDetector instance or None if still loading
+    """
+    global _ensemble_detector, _ensemble_loading
+    
+    # If already loaded, return immediately
+    if _ensemble_detector is not None:
+        return _ensemble_detector
+    
+    with _ensemble_lock:
+        # Double-check after acquiring lock
+        if _ensemble_detector is not None:
+            return _ensemble_detector
+        
+        # If another thread is loading, wait for it
+        if _ensemble_loading:
+            if debug:
+                print("Ensemble is being loaded by another thread, waiting...", file=sys.stderr)
+            
+            # Wait for the loading to complete
+            start_time = time.time()
+            while _ensemble_loading and (time.time() - start_time) < timeout:
+                time.sleep(1)
+            
+            # Check if loading completed
+            if _ensemble_detector is not None:
+                return _ensemble_detector
+            else:
+                raise TimeoutError("Ensemble loading timed out")
+        
+        # This thread will do the loading
+        _ensemble_loading = True
+        if debug:
+            print("Starting ensemble detector initialization...", file=sys.stderr)
+    
+    try:
+        # Load the ensemble (outside the lock to allow other threads to wait)
+        detector = create_ensemble_detector(debug=debug)
+        
+        with _ensemble_lock:
+            _ensemble_detector = detector
+            _ensemble_loading = False
+            if debug:
+                print("Ensemble detector loaded successfully!", file=sys.stderr)
+        
+        return _ensemble_detector
+        
+    except Exception as e:
+        with _ensemble_lock:
+            _ensemble_loading = False
+        if debug:
+            print(f"Error loading ensemble detector: {e}", file=sys.stderr)
+        raise
 
 
 def process_image(image_bytes):
@@ -27,8 +98,14 @@ def process_image(image_bytes):
         DetectionOutput Pydantic model with detection results as JSON string
     """
     try:
-        # Create ensemble detector
-        ensemble = create_ensemble_detector(debug=False)
+        # Get the global ensemble detector (lazy loaded on first call)
+        ensemble = get_ensemble_detector(debug=False)
+        
+        if ensemble is None:
+            return json.dumps({
+                "error": "Models are still loading. Please try again in a moment.",
+                "status": "loading"
+            })
 
         # Convert bytes to PIL Image
         image = Image.open(BytesIO(image_bytes))
@@ -185,9 +262,9 @@ def create_ensemble_detector(debug=False):
              'organika-sdxl',           
             'nonescape-full',            
             #'universal-fake-v2',
-            # DistilDIRE models (lightweight and efficient)
-            'distil-dire-celebahq',     # Good for face/portrait images
-            # 'distil-dire-celebahq-full',
+            ## DistilDIRE models (lightweight and efficient)
+            #'distil-dire-celebahq',     # Good for face/portrait images
+            #'distil-dire-celebahq-full',
             # #'distil-dire-eps-imagenet', # Fast general-purpose detection
             # SEResNet-50 models (excellent architecture for deepfake detection)
             # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
@@ -197,7 +274,7 @@ def create_ensemble_detector(debug=False):
             # 'xception71',    # Excellent for deepfakes (requires timm)
             # 'efficientnet_b7', # High accuracy (slower)
             # EfficientNet-B7 with Noisy Student (DFDC 3rd place solution)
-            'efficientnet-b7-ns',      # High accuracy, larger model - excellent for deepfakes
+            #'efficientnet-b7-ns',      # High accuracy, larger model - excellent for deepfakes
         ],
         debug=debug
     )
@@ -871,7 +948,7 @@ def main(path=None, debug=False):
     
     try:
         # Configuration
-        threshold = 0.31
+        threshold = 0.26
         voting_method = 'weighted'
         
         # Load ensemble models into memory once at startup

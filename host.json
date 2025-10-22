@@ -8,10 +8,13 @@
       }
     }
   },
-  "functionTimeout": "00:10:00",
+  "functionTimeout": "00:30:00",
   "extensions":{
       "http":{
-        "routePrefix":"v1.0"
+        "routePrefix":"v1.0",
+        "maxOutstandingRequests": 200,
+        "maxConcurrentRequests": 100,
+        "dynamicThrottlesEnabled": true
       }
     },
   "extensionBundle": {

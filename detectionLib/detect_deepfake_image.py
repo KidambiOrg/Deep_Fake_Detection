@@ -1670,15 +1670,13 @@ class EnsembleDetector:
         Returns:
             EnsembleResult with combined prediction
         """
-        # Get predictions from all models using their recommended thresholds
+        # Get predictions from all models using the user-provided threshold
         individual_results = []
         for key, detector in self.detectors.items():
             try:
-                # Use model-specific recommended threshold if available
-                model_info = MODEL_REGISTRY.get(key, {})
-                model_threshold = model_info.get('recommended_threshold', threshold)
-                
-                result = detector.detect(image_input, model_threshold)
+                # Use the threshold parameter passed by the user
+                # This ensures consistent threshold across all models
+                result = detector.detect(image_input, threshold)
                 individual_results.append(result)
             except Exception as e:
                 logger.error(f"Error in model {key}: {e}")
