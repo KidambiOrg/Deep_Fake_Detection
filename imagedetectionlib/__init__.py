@@ -1,18 +1,16 @@
 """
 Image Detection Library for deepfake and AI-generated image detection
-"""
-from .detect_deepfake_image import (
-    DeepfakeImageDetector,
-    EnsembleDetector,
-    DeepfakeDetectionResult,
-    EnsembleResult,
-    list_available_models
-)
 
+Note: Heavy imports are NOT done at package level to avoid startup delays.
+Import specific modules directly:
+  - from imagedetectionlib.detect_deepfake_image import EnsembleDetector
+  - from imagedetectionlib.model_registry import list_available_models
+"""
+
+# Do NOT import heavy modules here to avoid startup delays
 __all__ = [
     'DeepfakeImageDetector',
     'EnsembleDetector',
     'DeepfakeDetectionResult',
     'EnsembleResult',
-    'list_available_models'
 ]

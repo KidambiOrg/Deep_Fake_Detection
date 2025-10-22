@@ -9,14 +9,14 @@
     }
   },
   "functionTimeout": "00:30:00",
-  "extensions":{
-      "http":{
-        "routePrefix":"v1.0",
-        "maxOutstandingRequests": 200,
-        "maxConcurrentRequests": 100,
-        "dynamicThrottlesEnabled": true
-      }
-    },
+  "extensions": {
+    "http": {
+      "routePrefix": "v1.0",
+      "maxOutstandingRequests": 200,
+      "maxConcurrentRequests": 100,
+      "dynamicThrottlesEnabled": true
+    }
+  },
   "extensionBundle": {
     "id": "Microsoft.Azure.Functions.ExtensionBundle",
     "version": "[4.*, 5.0.0)"    
