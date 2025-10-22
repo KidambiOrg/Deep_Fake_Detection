@@ -1,4 +1,4 @@
-from detectionLib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult, list_available_models
+from imagedetectionlib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult, list_available_models
 from outputModel.detection_output_model import (
     DetectionOutput,
     ImageDetectionResult,

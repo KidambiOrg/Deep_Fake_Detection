@@ -33,7 +33,7 @@ python Scripts/download_mesonet_models.py
 ### Basic Usage
 
 ```python
-from detectionLib.detect_deepfake_mesonet import MesoNetDetector
+from imagedetectionlib.detect_deepfake_mesonet import MesoNetDetector
 
 # Initialize MesoNet detector
 detector = MesoNetDetector(
@@ -51,7 +51,7 @@ print(f"Is Fake: {result.is_fake} (confidence: {result.confidence:.2%})")
 For improved accuracy, use multiple models:
 
 ```python
-from detectionLib.detect_deepfake_image import EnsembleDetector
+from imagedetectionlib.detect_deepfake_image import EnsembleDetector
 
 ensemble = EnsembleDetector(
     model_keys=['efficientnet-b7-ns', 'mesonet', 'seresnet50', 'xception']
@@ -66,7 +66,7 @@ print(f"Ensemble Prediction: {'FAKE' if result.is_deepfake else 'REAL'}")
 The EfficientNet-B7 model with Noisy Student weights is based on the 3rd place solution from the Deepfake Detection Challenge:
 
 ```python
-from detectionLib.detect_deepfake_efficientnet_b7 import EfficientNetB7Detector
+from imagedetectionlib.detect_deepfake_efficientnet_b7 import EfficientNetB7Detector
 
 # Initialize detector with pretrained Noisy Student weights
 detector = EfficientNetB7Detector(

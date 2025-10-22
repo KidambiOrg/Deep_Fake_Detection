@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from detectionLib.detect_deepfake_text_npr import DetectLLMNPR, NPRDetectionResult
+    from textdetectionlib.detect_deepfake_text_npr import DetectLLMNPR, NPRDetectionResult
     print("[SUCCESS] Successfully imported DetectLLM-NPR module")
 except ImportError as e:
     print(f"[ERROR] Failed to import DetectLLM-NPR module: {e}")

@@ -120,7 +120,7 @@ def download_mesonet_model(model_dir: str = None):
             f.write(f"- {model_info['name']}: Pretrained MesoNet model (Keras H5 format)\n")
             f.write("- model_info.txt: This information file\n\n")
             f.write("Usage:\n")
-            f.write("  from detectionLib.detect_deepfake_mesonet import MesoNetDetector\n")
+            f.write("  from imagedetectionlib.detect_deepfake_mesonet import MesoNetDetector\n")
             f.write(f"  detector = MesoNetDetector(model_path='{model_file}')\n")
             f.write("  result = detector.detect_single('image.jpg')\n")
         
@@ -142,7 +142,7 @@ def download_mesonet_model(model_dir: str = None):
         logger.info("3. Or convert the model to PyTorch format (.pth)")
         logger.info("")
         logger.info("Usage example:")
-        logger.info("  from detectionLib.detect_deepfake_mesonet import MesoNetDetector")
+        logger.info("  from imagedetectionlib.detect_deepfake_mesonet import MesoNetDetector")
         logger.info(f"  detector = MesoNetDetector(model_path=r'{model_file}')")
         logger.info("  result = detector.detect_single('your_image.jpg')")
         
@@ -196,7 +196,7 @@ Dataset source: [UADFV_dataset on Kaggle](https://www.kaggle.com/datasets/aditya
 ### Basic Usage
 
 ```python
-from detectionLib.detect_deepfake_mesonet import MesoNetDetector
+from imagedetectionlib.detect_deepfake_mesonet import MesoNetDetector
 
 # Initialize detector with pretrained model
 detector = MesoNetDetector(
@@ -260,7 +260,7 @@ Or convert the model to PyTorch format (.pth) for PyTorch-only environments.
 MesoNet can be integrated into the ensemble detector:
 
 ```python
-from detectionLib.detect_deepfake_image import EnsembleDetector
+from imagedetectionlib.detect_deepfake_image import EnsembleDetector
 
 # MesoNet will be added to the ensemble automatically if configured
 ensemble = EnsembleDetector(
@@ -326,7 +326,7 @@ def main():
         logger.info("")
         logger.info("Quick start:")
         logger.info("  python")
-        logger.info("  >>> from detectionLib.detect_deepfake_mesonet import MesoNetDetector")
+        logger.info("  >>> from imagedetectionlib.detect_deepfake_mesonet import MesoNetDetector")
         logger.info(f"  >>> detector = MesoNetDetector(model_path=r'{model_file}')")
         logger.info("  >>> result = detector.detect_single('your_image.jpg')")
         logger.info("")
