@@ -119,8 +119,8 @@ def process_image(image_bytes):
         try:
         
             # Process the image
-            threshold = 0.26
-            voting_method = 'weighted'
+            threshold = 0.20
+            voting_method = 'median'
         
             
             result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
@@ -949,8 +949,8 @@ def main(path=None, debug=False):
     
     try:
         # Configuration
-        threshold = 0.26
-        voting_method = 'weighted'
+        threshold = 0.20
+        voting_method = 'median'
         
         # Load ensemble models into memory once at startup
         if debug:
