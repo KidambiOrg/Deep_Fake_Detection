@@ -5,9 +5,15 @@ Takes string input and outputs JSON with classification results
 import json
 import argparse
 import sys
+import os
 import logging
 from typing import Optional, Dict, Any
 from dataclasses import asdict
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 from textdetectionlib.text_detection_ensemble import TextDetectionEnsemble, EnsembleResult
 

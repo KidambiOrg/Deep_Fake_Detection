@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from imagedetectionlib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult, list_available_models
 from outputModel.detection_output_model import (
     DetectionOutput,
@@ -10,8 +18,6 @@ from outputModel.detection_output_model import (
 )
 from utils.exif_extractor import ExifExtractor
 from utils.c2pa_extractor import C2paExtractor
-import os 
-import sys
 import json
 import threading
 import time

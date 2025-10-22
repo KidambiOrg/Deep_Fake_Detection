@@ -20,7 +20,7 @@ from pathlib import Path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
-from app_detect_image import create_ensemble_detector, process_image_data
+from Services.app_detect_image import create_ensemble_detector, process_image_data
 
 
 class DeepfakeTestAnalyzer:
