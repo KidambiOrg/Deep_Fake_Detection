@@ -11,7 +11,8 @@ import pandas as pd
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 from textdetectionlib.detector_bert_ml import DetectorBertML
 from textdetectionlib.detector_bow_ml import DetectorBowML
@@ -96,6 +97,12 @@ def load_dataset(
     return texts, labels
 
 
+def train_bert_ml_wrapper(args_tuple):
+    """Wrapper function for multiprocessing"""
+    train_texts, train_labels, output_dir, pretrained_weights = args_tuple
+    return train_bert_ml(train_texts, train_labels, output_dir, pretrained_weights)
+
+
 def train_bert_ml(
     train_texts: List[str],
     train_labels: List[str],
@@ -103,6 +110,13 @@ def train_bert_ml(
     pretrained_weights: str = "bert-base-cased"
 ) -> Dict[str, Any]:
     """Train BERT_ML detector"""
+    # Setup logging for this process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
     try:
         logger.info("=" * 80)
         logger.info("Training BERT_ML detector")
@@ -127,12 +141,25 @@ def train_bert_ml(
         return {"success": False, "model": "bert", "error": str(e)}
 
 
+def train_bow_ml_wrapper(args_tuple):
+    """Wrapper function for multiprocessing"""
+    train_texts, train_labels, output_dir = args_tuple
+    return train_bow_ml(train_texts, train_labels, output_dir)
+
+
 def train_bow_ml(
     train_texts: List[str],
     train_labels: List[str],
     output_dir: str
 ) -> Dict[str, Any]:
     """Train BoW_ML detector"""
+    # Setup logging for this process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
     try:
         logger.info("=" * 80)
         logger.info("Training BoW_ML detector")
@@ -160,6 +187,12 @@ def train_bow_ml(
         return {"success": False, "model": "bow", "error": str(e)}
 
 
+def train_charcnn_wrapper(args_tuple):
+    """Wrapper function for multiprocessing"""
+    train_texts, train_labels, output_dir, epochs, batch_size = args_tuple
+    return train_charcnn(train_texts, train_labels, output_dir, epochs, batch_size)
+
+
 def train_charcnn(
     train_texts: List[str],
     train_labels: List[str],
@@ -168,6 +201,13 @@ def train_charcnn(
     batch_size: int = 32
 ) -> Dict[str, Any]:
     """Train CharCNN detector"""
+    # Setup logging for this process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
     try:
         logger.info("=" * 80)
         logger.info("Training CharCNN detector")
@@ -195,6 +235,12 @@ def train_charcnn(
         return {"success": False, "model": "charcnn", "error": str(e)}
 
 
+def train_distilbert_ml_wrapper(args_tuple):
+    """Wrapper function for multiprocessing"""
+    train_texts, train_labels, output_dir, pretrained_weights = args_tuple
+    return train_distilbert_ml(train_texts, train_labels, output_dir, pretrained_weights)
+
+
 def train_distilbert_ml(
     train_texts: List[str],
     train_labels: List[str],
@@ -202,6 +248,13 @@ def train_distilbert_ml(
     pretrained_weights: str = "distilbert-base-cased"
 ) -> Dict[str, Any]:
     """Train DistilBERT_ML detector"""
+    # Setup logging for this process
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
     try:
         logger.info("=" * 80)
         logger.info("Training DistilBERT_ML detector")
@@ -293,15 +346,15 @@ def main():
     if "all" in models_to_train:
         models_to_train = ["bert", "bow", "charcnn", "distilbert"]
     
-    # Prepare training tasks
+    # Prepare training tasks with wrapper functions for multiprocessing
     training_tasks = []
     for model_name in models_to_train:
         if model_name == "bert":
-            training_tasks.append(("bert", train_bert_ml, (train_texts, train_labels, args.output_dir)))
+            training_tasks.append(("bert", train_bert_ml_wrapper, (train_texts, train_labels, args.output_dir, "bert-base-cased")))
         elif model_name == "bow":
-            training_tasks.append(("bow", train_bow_ml, (train_texts, train_labels, args.output_dir)))
+            training_tasks.append(("bow", train_bow_ml_wrapper, (train_texts, train_labels, args.output_dir)))
         elif model_name == "charcnn":
-            training_tasks.append(("charcnn", train_charcnn, (
+            training_tasks.append(("charcnn", train_charcnn_wrapper, (
                 train_texts,
                 train_labels,
                 args.output_dir,
@@ -309,7 +362,7 @@ def main():
                 args.charcnn_batch_size
             )))
         elif model_name == "distilbert":
-            training_tasks.append(("distilbert", train_distilbert_ml, (train_texts, train_labels, args.output_dir)))
+            training_tasks.append(("distilbert", train_distilbert_ml_wrapper, (train_texts, train_labels, args.output_dir, "distilbert-base-cased")))
     
     # Train models in parallel
     total_count = len(training_tasks)
@@ -319,11 +372,12 @@ def main():
     logger.info(f"Starting parallel training for {total_count} models...")
     logger.info("=" * 80)
     
-    with ThreadPoolExecutor(max_workers=min(4, total_count)) as executor:
+    # Use ProcessPoolExecutor for true parallelism with deep learning models
+    with ProcessPoolExecutor(max_workers=min(4, total_count)) as executor:
         # Submit all training tasks
         future_to_model = {}
         for model_name, train_func, args_tuple in training_tasks:
-            future = executor.submit(train_func, *args_tuple)
+            future = executor.submit(train_func, args_tuple)
             future_to_model[future] = model_name
         
         # Collect results as they complete
@@ -369,4 +423,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Required for multiprocessing on Windows
+    multiprocessing.freeze_support()
     main()

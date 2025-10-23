@@ -15,7 +15,7 @@ requests>=2.25.0
 pydantic>=2.0.0
 pandas>=1.3.0
 c2pa-python>=0.27.0
-azure-functions
+azure-functions>=1.18.0
 azure-storage-blob
 azurefunctions.extensions.bindings.blob
 tensorflow>=2.10.0
