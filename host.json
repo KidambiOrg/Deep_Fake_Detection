@@ -27,7 +27,7 @@
     }
   },
   "extensionBundle": {
-    "id": "Microsoft.Azure.Functions.ExtensionBundle.Preview",
+    "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
     "version": "[4.0.0, 5.0.0)"    
   }
 }
