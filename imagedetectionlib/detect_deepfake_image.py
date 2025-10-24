@@ -51,13 +51,7 @@ except ImportError:
     NONESCAPE_AVAILABLE = False
     logging.warning("Nonescape detector not available.")
 
-# Try to import UniversalFakeDetectV2 detector
-try:
-    from .detect_universal_fake_v2 import UniversalFakeDetectV2Detector
-    UNIVERSAL_FAKE_V2_AVAILABLE = True
-except ImportError:
-    UNIVERSAL_FAKE_V2_AVAILABLE = False
-    logging.warning("UniversalFakeDetectV2 detector not available.")
+
 
  
 # Try to import SEResNet-50 detector
@@ -68,14 +62,6 @@ except ImportError:
     SERESNET50_AVAILABLE = False
     logging.warning("SEResNet-50 detector not available.")
 
- 
-# Try to import FTCN detector
-try:
-    from .detect_deepfake_ftcn import FTCNDetector
-    FTCN_AVAILABLE = True
-except ImportError:
-    FTCN_AVAILABLE = False
-    logging.warning("FTCN detector not available.")
 
 # Import the centralized model registry
 from .model_registry import MODEL_REGISTRY
@@ -251,7 +237,7 @@ class DeepfakeImageDetector:
             
             # Move model to device
             if self.model is not None:
-                self.model = self.model.to(self.device)
+                self.model = self.model.to(self.device)  # type: ignore
                 self.model.eval()
                 
                 # Get label mappings
@@ -824,69 +810,9 @@ class EnsembleDetector:
                     if self.debug:
                         logger.info(f"[OK] Loaded Nonescape model: {key}")
                 
-                elif config['source'] == 'universal_fake_v2':
-                    # Load UniversalFakeDetectV2 model
-                    if not UNIVERSAL_FAKE_V2_AVAILABLE:
-                        logger.warning(f"⚠ Skipping {key}: UniversalFakeDetectV2 detector not available")
-                        continue
-                    
-                    model_path = config.get('model_path')
-                    if model_path is None:
-                        logger.warning(f"⚠ Skipping {key}: model_path not specified in config")
-                        continue
-                    
-                    # Note: Model can load without weights (will warn), so we don't skip if file doesn't exist
-                    detector = UniversalFakeDetectV2Detector(
-                        model_path=model_path,
-                        device=str(self.device),
-                        debug=self.debug
-                    )
-                    self.detectors[key] = self._wrap_universal_fake_v2_detector(detector, key)
-                    if self.debug:
-                        logger.info(f"[OK] Loaded UniversalFakeDetectV2 model: {key}")
                 
-                elif config['source'] == 'distil_dire':
-                    # Load DistilDIRE model
-                    if not DISTIL_DIRE_AVAILABLE:
-                        logger.warning(f"⚠ Skipping {key}: DistilDIRE detector not available")
-                        continue
-                    
-                    model_path = config.get('model_path')
-                    model_type = config.get('model_type', 'distil_dire')
-                    inference_mode = config.get('inference_mode', 'full')
-                    adm_model_path = config.get('adm_model_path')
-                    
-                    if model_path is None:
-                        logger.warning(f"⚠ Skipping {key}: model_path not specified in config")
-                        continue
-                    
-                    # Check if model file exists
-                    if not os.path.exists(model_path):
-                        logger.warning(f"⚠ Skipping {key}: Model file not found at {model_path}")
-                        logger.info(f"   To use {key}, download the model using Scripts/download_distil_dire_models.py")
-                        continue
-                    
-                    # Check ADM model if needed
-                    if inference_mode in ['full', 'eps_only'] and adm_model_path:
-                        if not os.path.exists(adm_model_path):
-                            logger.warning(f"⚠ ADM model not found at {adm_model_path}, will use simplified version")
-                            adm_model_path = None
-                    
-                    # Get recommended threshold
-                    threshold = config.get('recommended_threshold', 0.5)
-                    
-                    detector = DistilDIREDetector(
-                        model_path=model_path,
-                        model_type=model_type,
-                        inference_mode=inference_mode,
-                        adm_model_path=adm_model_path,
-                        device=str(self.device),
-                        threshold=threshold,
-                        debug=self.debug
-                    )
-                    self.detectors[key] = self._wrap_distil_dire_detector(detector, key)
-                    if self.debug:
-                        logger.info(f"[OK] Loaded DistilDIRE model: {key}")
+                
+                
                 
                 elif config['source'] == 'seresnet50':
                     # Load SEResNet-50 model
@@ -904,7 +830,8 @@ class EnsembleDetector:
                         model_path = None
                     
                     model_type = config.get('model_type', 'pretrained')  # Default to 'pretrained'
-                    detector = SEResNet50Detector(
+                    from .detect_deepfake_seresnet50 import SEResNet50Detector as SER50
+                    detector = SER50(
                         model_path=model_path,
                         model_type=model_type,
                         device=str(self.device),
@@ -918,54 +845,9 @@ class EnsembleDetector:
                 
                  
                 
-                elif config['source'] == 'efficientnet-b7':
-                    # Load EfficientNet-B7 model
-                    if not EFFICIENTNET_B7_AVAILABLE:
-                        logger.warning(f"⚠ Skipping {key}: EfficientNet-B7 detector not available")
-                        continue
-                    
-                    model_path = config.get('model_path')
-                    input_size = config.get('input_size', 224)
-                    
-                    # Check if fine-tuned model file exists (optional)
-                    if model_path and not os.path.exists(model_path):
-                        logger.warning(f"⚠ EfficientNet-B7 fine-tuned model not found at {model_path}, will use pretrained Noisy Student weights")
-                        model_path = None
-                    
-                    detector = EfficientNetB7Detector(
-                        model_path=model_path,
-                        device=str(self.device),
-                        input_size=input_size,
-                        debug=self.debug
-                    )
-                    self.detectors[key] = self._wrap_efficientnet_b7_detector(detector, key)
-                    if self.debug:
-                        logger.info(f"[OK] Loaded EfficientNet-B7 model: {key}")
+                 
                 
-                elif config['source'] == 'ftcn':
-                    # Load FTCN model
-                    if not FTCN_AVAILABLE:
-                        logger.warning(f"⚠ Skipping {key}: FTCN detector not available")
-                        continue
-                    
-                    model_path = config.get('model_path')
-                    input_size = config.get('input_size', 224)
-                    
-                    # Check if model file exists
-                    if model_path and not os.path.exists(model_path):
-                        logger.warning(f"⚠ Skipping {key}: FTCN model not found at {model_path}")
-                        logger.info(f"   Please ensure the file exists at: {model_path}")
-                        continue
-                    
-                    detector = FTCNDetector(
-                        model_path=model_path,
-                        device=str(self.device),
-                        input_size=input_size,
-                        debug=self.debug
-                    )
-                    self.detectors[key] = self._wrap_ftcn_detector(detector, key)
-                    if self.debug:
-                        logger.info(f"[OK] Loaded FTCN model: {key}")
+                 
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1005,7 +887,10 @@ class EnsembleDetector:
     
     def _load_timm_model(self, config: Dict) -> torch.nn.Module:
         """Load model from timm library"""
-        model = timm.create_model(
+        if not TIMM_AVAILABLE:
+            raise ImportError("timm library is not available")
+        import timm as timm_lib
+        model = timm_lib.create_model(
             config['model_name'],
             pretrained=True,
             num_classes=2  # Binary classification
@@ -1019,11 +904,12 @@ class EnsembleDetector:
         class PyTorchModelWrapper:
             """Wrapper to make PyTorch models compatible with DeepfakeImageDetector interface"""
             
-            def __init__(self, model, device, input_size, model_key, model_name):
+            def __init__(self, model, device, input_size, model_key, model_name, debug=False):
                 self.model = model
                 self.device = device
                 self.model_key = model_key
                 self.model_name = model_name
+                self.debug = debug
                 self.transform = transforms.Compose([
                     transforms.Resize((input_size, input_size)),
                     transforms.ToTensor(),
@@ -1120,7 +1006,7 @@ class EnsembleDetector:
                 image_path = image_input if isinstance(image_input, str) else None
                 
                 # Transform and prepare input
-                input_tensor = self.transform(image).unsqueeze(0).to(self.device)
+                input_tensor = self.transform(image).unsqueeze(0).to(self.device)  # type: ignore
                 
                 # Run inference
                 with torch.no_grad():
@@ -1145,7 +1031,8 @@ class EnsembleDetector:
             device=self.device,
             input_size=config['input_size'],
             model_key=model_key,
-            model_name=config['name']
+            model_name=config['name'],
+            debug=self.debug
         )
     
     def _wrap_nonescape_detector(self, detector, model_key: str):
@@ -1302,32 +1189,7 @@ class EnsembleDetector:
         
         return EfficientNetB7Wrapper(detector, model_key)
     
-    def _wrap_ftcn_detector(self, detector, model_key: str):
-        """Wrap FTCN detector to match DeepfakeImageDetector interface"""
-        class FTCNWrapper:
-            """Wrapper to make FTCN detector compatible with DeepfakeImageDetector interface"""
-            
-            def __init__(self, ftcn_detector, model_key):
-                self.ftcn_detector = ftcn_detector
-                self.model_key = model_key
-                self.model_name = ftcn_detector.model_name
-            
-            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
-                      threshold: float = 0.5) -> DeepfakeDetectionResult:
-                """Detect deepfake using FTCN model"""
-                # Convert FTCN result to DeepfakeDetectionResult
-                ftcn_result = self.ftcn_detector.detect(image_input, threshold)
-                
-                return DeepfakeDetectionResult(
-                    is_deepfake=ftcn_result.is_deepfake,
-                    confidence=ftcn_result.confidence,
-                    scores=ftcn_result.scores,
-                    processing_time=ftcn_result.processing_time,
-                    image_path=ftcn_result.image_path,
-                    model_name=self.model_name
-                )
-        
-        return FTCNWrapper(detector, model_key)
+    
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
@@ -1664,8 +1526,8 @@ class EnsembleDetector:
             raise ValueError(f"Unknown voting method: {voting_method}")
         
         return EnsembleResult(
-            is_deepfake=is_deepfake,
-            confidence=confidence,
+            is_deepfake=bool(is_deepfake),
+            confidence=float(confidence),
             individual_results=individual_results,
             voting_summary=voting_summary,
             average_fake_score=avg_fake_score,

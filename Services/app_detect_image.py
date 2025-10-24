@@ -127,7 +127,7 @@ def process_image(image_bytes):
         
             # Process the image
             threshold = 0.20
-            voting_method = 'median'
+            voting_method = 'weighted'
         
             
             result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
@@ -263,12 +263,9 @@ def create_ensemble_detector(debug=False):
              'prithiv-v1',
              'dima-vit',
              'organika-sdxl',           
-            'nonescape-full',            
-            #'universal-fake-v2',            
+            'nonescape-full',                              
             # SEResNet-50 models (excellent architecture for deepfake detection)            
-            'seresnet50',              # Fine-tuned model (if available)
-            # FTCN model (Fully Temporal Convolutional Network)
-            'ftcn'                    # FTCN for deepfake detection
+            'seresnet50'              # Fine-tuned model (if available)            
            
         ],
         debug=debug

@@ -44,16 +44,6 @@ MODEL_REGISTRY = {
         'recommended_threshold': 0.5,
     },
     
-    # Universal Fake Detect V2
-    'universal-fake-v2': {
-        'name': 'UniversalFakeDetect V2',
-        'description': 'Universal detector for various types of AI-generated images',
-        'architecture': 'ResNet50',
-        'source': 'universal_fake_v2',
-        'recommended_threshold': 0.5,
-    },
-    
-    
     
     # SEResNet-50 Models    
     'seresnet50': {
@@ -67,17 +57,7 @@ MODEL_REGISTRY = {
     },
     
     
-    # FTCN Model
-    'ftcn': {
-        'name': 'FTCN',
-        'description': 'Fully Temporal Convolutional Network for deepfake detection',
-        'architecture': 'FTCN',
-        'source': 'ftcn',
-        'model_path': 'Models/FTCN/ftcn_tt.pth',
-        'recommended_threshold': 0.5,
-    }
-    
-    
+  
 }
 
 
