@@ -1408,15 +1408,15 @@ class EnsembleDetector:
             # More robust approach that considers both fake and real scores
             is_deepfake = avg_fake_score > avg_real_score
             
-            # Calculate confidence based on models that agree with the final prediction
-            # This better represents the ensemble's certainty
+            # Calculate confidence based on the score that aligns with the final prediction
+            # Use the appropriate score type (fake or real) from models that agree
             if is_deepfake:
-                # Get scores from models that predicted FAKE
+                # Get FAKE scores from models that predicted FAKE
                 fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
                                     if individual_results[i].is_deepfake]
                 confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
             else:
-                # Get scores from models that predicted REAL
+                # Get REAL scores from models that predicted REAL
                 real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
                                     if not individual_results[i].is_deepfake]
                 confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
