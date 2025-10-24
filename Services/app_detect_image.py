@@ -258,27 +258,18 @@ def create_ensemble_detector(debug=False):
     """
     return EnsembleDetector(
         model_keys=[
+            
             # HuggingFace models
              'prithiv-v1',
              'dima-vit',
              'organika-sdxl',           
             'nonescape-full',            
-            #'universal-fake-v2',
-            ## DistilDIRE models (lightweight and efficient)
-            #'distil-dire-celebahq',     # Good for face/portrait images
-            #'distil-dire-celebahq-full',
-            # #'distil-dire-eps-imagenet', # Fast general-purpose detection
-            # SEResNet-50 models (excellent architecture for deepfake detection)
-            # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
+            #'universal-fake-v2',            
+            # SEResNet-50 models (excellent architecture for deepfake detection)            
             'seresnet50',              # Fine-tuned model (if available)
             # FTCN model (Fully Temporal Convolutional Network)
-            'ftcn',                    # FTCN for deepfake detection
-            # MesoNet model (lightweight CNN for mesoscopic detection)
-            # 'mesonet',                 # Compact and fast, good for faces
-            # 'xception71',    # Excellent for deepfakes (requires timm)
-            # 'efficientnet_b7', # High accuracy (slower)
-            # EfficientNet-B7 with Noisy Student (DFDC 3rd place solution)
-            #'efficientnet-b7-ns',      # High accuracy, larger model - excellent for deepfakes
+            'ftcn'                    # FTCN for deepfake detection
+           
         ],
         debug=debug
     )

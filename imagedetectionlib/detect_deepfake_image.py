@@ -59,14 +59,7 @@ except ImportError:
     UNIVERSAL_FAKE_V2_AVAILABLE = False
     logging.warning("UniversalFakeDetectV2 detector not available.")
 
-# Try to import DistilDIRE detector
-try:
-    from .detect_deepfake_distil_dire import DistilDIREDetector
-    DISTIL_DIRE_AVAILABLE = True
-except ImportError:
-    DISTIL_DIRE_AVAILABLE = False
-    logging.warning("DistilDIRE detector not available.")
-
+ 
 # Try to import SEResNet-50 detector
 try:
     from .detect_deepfake_seresnet50 import SEResNet50Detector
@@ -76,15 +69,6 @@ except ImportError:
     logging.warning("SEResNet-50 detector not available.")
 
  
-
-# Try to import EfficientNet-B7 detector
-try:
-    from .detect_deepfake_efficientnet_b7 import EfficientNetB7Detector
-    EFFICIENTNET_B7_AVAILABLE = True
-except ImportError:
-    EFFICIENTNET_B7_AVAILABLE = False
-    logging.warning("EfficientNet-B7 detector not available.")
-
 # Try to import FTCN detector
 try:
     from .detect_deepfake_ftcn import FTCNDetector
