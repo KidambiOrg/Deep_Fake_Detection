@@ -271,6 +271,8 @@ def create_ensemble_detector(debug=False):
             # SEResNet-50 models (excellent architecture for deepfake detection)
             # # 'seresnet50-pretrained',    # Uses pretrained model from torch.hub
             'seresnet50',              # Fine-tuned model (if available)
+            # FTCN model (Fully Temporal Convolutional Network)
+            'ftcn',                    # FTCN for deepfake detection
             # MesoNet model (lightweight CNN for mesoscopic detection)
             # 'mesonet',                 # Compact and fast, good for faces
             # 'xception71',    # Excellent for deepfakes (requires timm)
@@ -674,156 +676,7 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
             lines.append("")
     
     return "\n".join(lines)
-
-
-def display_overall_results_table(results_data):
-    """Display overall results in a markdown table format
-    
-    Args:
-        results_data: List of result dictionaries
-    """
-    print("| Image | Ground Truth | Prediction | [OK]/[FAIL] | Confidence | Avg Fake | Avg Real | Voting |")
-    print("|-------|--------------|------------|-----|------------|----------|----------|--------|")
-    
-    for data in results_data:
-        correctness = "[OK]" if data['is_correct'] else "[FAIL]"
-        print(f"| {data['image']} | {data['ground_truth']} | {data['prediction']} | {correctness} | "
-              f"{data['confidence']:.4f} ({data['confidence']*100:.1f}%) | "
-              f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
-
-
-def display_individual_model_results(results_data):
-    """Display individual model results for each image
-    
-    Args:
-        results_data: List of result dictionaries
-    """
-    print("\n### 📋 Individual Model Results\n")
-    for data in results_data:
-        if data['individual_results']:
-            correctness_icon = "[OK]" if data['is_correct'] else "[FAIL]"
-            print(f"\n#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})\n")
-            print("| Model | Prediction | Confidence | Fake Score | Real Score |")
-            print("|-------|------------|------------|------------|------------|")
-            for individual in data['individual_results']:
-                pred = 'FAKE' if individual.is_deepfake else 'REAL'
-                
-                # Extract fake and real scores from the model's scores dictionary
-                fake_score = 0.0
-                real_score = 0.0
-                
-                # Check for various fake label formats (artificial, fake, etc.)
-                for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
-                                'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
-                                'generated', 'Generated', 'synthetic', 'Synthetic', 
-                                'AI', 'ai', 'LABEL_1', '1']:
-                    if fake_key in individual.scores:
-                        fake_score = individual.scores[fake_key]
-                        break
-                
-                # Check for various real label formats (human, real, authentic, etc.)
-                for real_key in ['human', 'Human', 'HUMAN',
-                                'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
-                                'genuine', 'Genuine', 'LABEL_0', '0']:
-                    if real_key in individual.scores:
-                        real_score = individual.scores[real_key]
-                        break
-                
-                # If still no scores found, try to infer from available scores
-                if fake_score == 0.0 and real_score == 0.0 and individual.scores:
-                    # Print debug info to help identify the issue
-                    print(f"| {individual.model_name} | DEBUG: Available labels: {list(individual.scores.keys())} |")
-                    # Try to use first two scores if available
-                    scores_list = list(individual.scores.values())
-                    if len(scores_list) >= 2:
-                        # Assume first is real, second is fake (common pattern)
-                        real_score = scores_list[0]
-                        fake_score = scores_list[1]
-                
-                print(f"| {individual.model_name} | {pred} | "
-                      f"{individual.confidence:.4f} ({individual.confidence*100:.1f}%) | "
-                      f"{fake_score:.4f} | {real_score:.4f} |")
-
-
-def calculate_and_display_metrics(results_data, voting_method='weighted', threshold=0.26):
-    """Calculate and display performance metrics
-    
-    Args:
-        results_data: List of result dictionaries
-        voting_method: Voting method used
-        threshold: Threshold value used
-    """
-    if not results_data:
-        return
-    
-    total = len(results_data)
-    correct = sum(1 for d in results_data if d['is_correct'])
-    accuracy = (correct / total) * 100 if total > 0 else 0
-    
-    # Confusion matrix
-    true_positives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'FAKE')
-    false_positives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'FAKE')
-    true_negatives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'REAL')
-    false_negatives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'REAL')
-    
-    # Calculate precision, recall, F1
-    precision = (true_positives / (true_positives + false_positives)) * 100 if (true_positives + false_positives) > 0 else 0
-    recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
-    f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
-    
-    print("\n\n## [STATS] Performance Metrics")
-    print(f"\n**Voting Method**: `{voting_method}`")
-    
-    # Explain voting method
-    if voting_method == 'weighted' or voting_method == 'average':
-        print(f"- Uses **average fake score** across all models (avg fake score >= {threshold} → FAKE)")
-        print(f"- More robust for noisy images than simple majority voting")
-    elif voting_method == 'majority':
-        print(f"- Uses **simple majority** vote (most models agree)")
-    elif voting_method == 'confidence_weighted':
-        print(f"- Weights fake scores by each model's confidence")
-    elif voting_method == 'maximum':
-        print(f"- Uses prediction from model with highest confidence")
-    elif voting_method == 'unanimous':
-        print(f"- All models must agree")
-    elif voting_method == 'adaptive_threshold':
-        print(f"- Adjusts threshold based on prediction variance (disagreement between models)")
-        print(f"- Higher variance → higher threshold needed")
-    elif voting_method == 'median':
-        print(f"- Uses **median fake score** instead of average (more robust to outliers)")
-    elif voting_method == 'robust_majority':
-        print(f"- Excludes extreme outliers before majority voting using IQR method")
-        print(f"- Best for handling models with very different sensitivities")
-    elif voting_method == 'dynamic_consensus':
-        print(f"- Requires higher agreement when models disagree strongly")
-        print(f"- Low disagreement: 50% majority | High disagreement: 75% majority")
-    elif voting_method == 'reliability_weighted':
-        print(f"- Weights votes based on each model's estimated reliability")
-        print(f"- Gives more weight to historically accurate models")
-    elif voting_method == 'bayesian':
-        print(f"- Uses Bayesian inference to combine predictions probabilistically")
-        print(f"- Accounts for model confidence and prior probabilities")
-    elif voting_method == 'entropy_weighted':
-        print(f"- Weights predictions by certainty (low entropy = high weight)")
-        print(f"- More certain predictions get higher influence")
-    elif voting_method == 'consensus_threshold':
-        print(f"- Adapts threshold based on model consensus strength")
-        print(f"- High consensus → lower threshold needed")
-    
-    print(f"\n**Threshold**: {threshold}")
-    print(f"\n**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
-    print(f"**Precision**: {precision:.2f}% (of predicted fakes, how many are actually fake)")
-    print(f"**Recall**: {recall:.2f}% (of actual fakes, how many were detected)")
-    print(f"**F1-Score**: {f1_score:.2f}%")
-    
-    print("\n### Confusion Matrix")
-    print(f"```")
-    print(f"                    Predicted")
-    print(f"                FAKE      REAL")
-    print(f"Actual FAKE     {true_positives:4d}      {false_negatives:4d}")
-    print(f"       REAL     {false_positives:4d}      {true_negatives:4d}")
-    print(f"```")
-
+ 
 
 
 def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='weighted', debug=False):

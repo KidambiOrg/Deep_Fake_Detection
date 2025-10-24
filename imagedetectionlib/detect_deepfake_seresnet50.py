@@ -32,6 +32,31 @@ from dataclasses import dataclass
 from pathlib import Path
 import cv2
 import tempfile
+import sys
+
+# Create a compatibility module for senet if it doesn't exist
+# This allows loading old .pkl files that reference the senet module
+if 'senet' not in sys.modules:
+    import types
+    senet_module = types.ModuleType('senet')
+    senet_se_resnet_module = types.ModuleType('senet.se_resnet')
+    senet_se_module_module = types.ModuleType('senet.se_module')
+    
+    # Register all modules in sys.modules
+    sys.modules['senet'] = senet_module
+    sys.modules['senet.se_resnet'] = senet_se_resnet_module
+    sys.modules['senet.se_module'] = senet_se_module_module
+    
+    # Set up package structure - se_resnet and se_module are submodules of senet
+    senet_module.se_resnet = senet_se_resnet_module
+    senet_module.se_module = senet_se_module_module
+    
+    # Mark senet as a package
+    senet_module.__package__ = 'senet'
+    senet_module.__path__ = []
+    
+    # We'll add the actual classes after they're defined below
+    # This forward reference will be filled in after the class definitions
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -226,6 +251,16 @@ class SEResNet(nn.Module):
 
         return x
 
+# Populate the senet modules with the necessary classes for pickle compatibility
+# This allows unpickling of .pkl weight files that reference senet module classes
+sys.modules['senet.se_resnet'].SEBottleneck = SEBottleneck
+sys.modules['senet.se_resnet'].SEBasicBlock = SEBasicBlock
+sys.modules['senet.se_resnet'].SEResNet = SEResNet
+sys.modules['senet.se_resnet'].SELayer = SELayer
+
+# Also populate senet.se_module in case pickle references it
+sys.modules['senet.se_module'].SELayer = SELayer
+
 def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
     """Constructs a SE-ResNet-50 model - matches reference implementation"""
     # Use the custom SEResNet implementation for compatibility
@@ -236,7 +271,10 @@ def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
             # First try to load from local weights file if provided
             if weights_path and os.path.exists(weights_path):
                 logger.info(f"Loading SEResNet-50 weights from local file: {weights_path}")
-                pretrained_dict = torch.load(weights_path, map_location='cpu')
+                # Add safe globals for torchvision models
+                from torchvision.models import resnet
+                torch.serialization.add_safe_globals([resnet.ResNet])
+                pretrained_dict = torch.load(weights_path, map_location='cpu', weights_only=False)
                 if num_classes != 1000:
                     # Copy all layers except the final classifier
                     model_dict = model.state_dict()
@@ -248,26 +286,45 @@ def se_resnet50(num_classes=1000, pretrained=False, weights_path=None):
             else:
                 # Load from default weights path in Models folder (no online download)
                 script_dir = Path(__file__).parent.parent
-                default_weights_path = script_dir / "Models" / "SERESNet_50" / "seresnet50-60a8950a85b2b.pkl"
+                
+                # Try .pth files first (safer, no senet module dependency)
+                default_weights_path = script_dir / "Models" / "SERESNet_50" / "seresnet50_pretrained.pth"
+                
+                # Fallback to .pkl file if .pth not found
+                if not default_weights_path.exists():
+                    default_weights_path = script_dir / "Models" / "SERESNet_50" / "seresnet50-60a8950a85b2b.pkl"
                 
                 if not default_weights_path.exists():
                     raise FileNotFoundError(
                         f"SEResNet-50 pretrained weights not found at: {default_weights_path}\n"
-                        f"Please ensure the file 'seresnet50-60a8950a85b2b.pkl' exists in the Models/SERESNet_50 folder.\n"
-                        f"You can download it from: https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"
+                        f"Please ensure either 'seresnet50_pretrained.pth' or 'seresnet50-60a8950a85b2b.pkl' exists in the Models/SERESNet_50 folder.\n"
+                        f"You can download the .pkl file from: https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"
                     )
                 
                 logger.info(f"Loading SEResNet-50 weights from: {default_weights_path}")
                 
                 # Try loading with weights_only=True first (safer), fall back to False if needed
                 try:
-                    pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=True)
+                    # Add safe globals for torchvision models to allow loading
+                    from torchvision.models import resnet
+                    torch.serialization.add_safe_globals([resnet.ResNet])
+                    loaded_data = torch.load(default_weights_path, map_location='cpu', weights_only=True)
                     logger.info("[OK] Loaded weights successfully with weights_only=True")
                 except Exception as e:
                     logger.warning(f"Failed to load with weights_only=True: {e}")
                     logger.info("Retrying with weights_only=False (you trust this file from Models folder)")
-                    pretrained_dict = torch.load(default_weights_path, map_location='cpu', weights_only=False)
+                    loaded_data = torch.load(default_weights_path, map_location='cpu', weights_only=False)
                     logger.info("[OK] Loaded weights successfully with weights_only=False")
+                
+                # Handle both cases: loaded_data could be a state_dict or a full model
+                if isinstance(loaded_data, dict):
+                    pretrained_dict = loaded_data
+                elif isinstance(loaded_data, nn.Module):
+                    # Extract state_dict from the model object
+                    pretrained_dict = loaded_data.state_dict()
+                    logger.info("[OK] Extracted state_dict from loaded model object")
+                else:
+                    raise TypeError(f"Expected state_dict (dict) or model (nn.Module), got {type(loaded_data)}")
                 
                 if num_classes != 1000:
                     # Copy all layers except the final classifier for binary classification
@@ -305,6 +362,7 @@ class SEResNet50Detector:
     
     def __init__(self, 
                  model_path: Optional[str] = None,
+                 model_type: str = 'pretrained',  # 'pretrained' (1000 classes) or 'complete' (2 classes)
                  device: Optional[str] = None,
                  threshold: float = 0.5,
                  input_size: int = 224,
@@ -314,6 +372,7 @@ class SEResNet50Detector:
         
         Args:
             model_path: Path to pretrained model. If None, downloads from torch.hub
+            model_type: Type of model weights - 'pretrained' (ImageNet, 1000 classes) or 'complete' (fine-tuned, 2 classes)
             device: Device to run inference on ('cpu' or 'cuda')
             threshold: Classification threshold (default: 0.5)
             input_size: Input image size (default: 224)
@@ -323,6 +382,7 @@ class SEResNet50Detector:
         self.threshold = threshold
         self.input_size = input_size
         self.model_name = "SEResNet-50"
+        self.model_type = model_type
         self.debug = debug
         
         # Initialize model
@@ -365,19 +425,23 @@ class SEResNet50Detector:
     def _load_model(self, model_path: Optional[str] = None) -> nn.Module:
         """Load SEResNet-50 model"""
         try:
-            if model_path and os.path.exists(model_path):
-                # Load fine-tuned model for deepfake detection
+            if model_path and os.path.exists(model_path) and self.model_type == 'complete':
+                # Load complete fine-tuned model for deepfake detection (2 classes)
                 if self.debug:
                     logger.info(f"Loading fine-tuned model from {model_path}")
                 model = se_resnet50(num_classes=2, pretrained=False)
-                state_dict = torch.load(model_path, map_location='cpu')
+                # Add safe globals for torchvision models
+                from torchvision.models import resnet
+                torch.serialization.add_safe_globals([resnet.ResNet])
+                state_dict = torch.load(model_path, map_location='cpu', weights_only=False)
                 model.load_state_dict(state_dict)
             else:
                 # Load pretrained ImageNet model and use as feature extractor
                 if self.debug:
                     logger.info("Loading pretrained SEResNet-50 as feature extractor")
                 # Load pretrained model with ImageNet weights (1000 classes)
-                model = se_resnet50(num_classes=1000, pretrained=True)
+                # Pass model_path to se_resnet50 so it loads from the specified path
+                model = se_resnet50(num_classes=1000, pretrained=True, weights_path=model_path)
                 
                 # Get the feature dimension
                 in_features = model.fc.in_features

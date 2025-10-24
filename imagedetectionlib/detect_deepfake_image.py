@@ -85,6 +85,17 @@ except ImportError:
     EFFICIENTNET_B7_AVAILABLE = False
     logging.warning("EfficientNet-B7 detector not available.")
 
+# Try to import FTCN detector
+try:
+    from .detect_deepfake_ftcn import FTCNDetector
+    FTCN_AVAILABLE = True
+except ImportError:
+    FTCN_AVAILABLE = False
+    logging.warning("FTCN detector not available.")
+
+# Import the centralized model registry
+from .model_registry import MODEL_REGISTRY
+
 # Suppress warnings
 warnings.filterwarnings("ignore", message=".*torch.load.*")
 warnings.filterwarnings("ignore", message=".*deprecated.*")
@@ -94,380 +105,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Model Registry - Available deepfake detection models
-MODEL_REGISTRY = {
-    # HuggingFace Models
-    'prithiv-v1': {
-        'name': 'prithivMLMods/deepfake-detector-model-v1',
-        'description': 'SigLIP-based deepfake detector (default)',
-        'architecture': 'SigLIP',
-        'source': 'huggingface',
-        'labels': {0: 'Fake', 1: 'Real'},
-        'recommended_threshold': 0.5,
-    },
-    'dima-vit': {
-        'name': 'dima806/deepfake_vs_real_image_detection',
-        'description': 'Vision Transformer based detector',
-        'architecture': 'ViT',
-        'source': 'huggingface',
-        'labels': None,  # Will be loaded from model
-        'recommended_threshold': 0.5,
-    },
-    'umm-efficientnet': {
-        'name': 'umm-maybe/AI-image-detector',
-        'description': 'EfficientNet-based AI image detector',
-        'architecture': 'EfficientNet',
-        'source': 'huggingface',
-        'labels': None,
-        'recommended_threshold': 0.5,
-    },
-    'organika-sdxl': {
-        'name': 'Organika/sdxl-detector',
-        'description': 'Specialized for Stable Diffusion generated images',
-        'architecture': 'Custom',
-        'source': 'huggingface',
-        'labels': None,
-        'recommended_threshold': 0.5,
-    },   
-    
-    # TorchVision/Timm Models
-    'efficientnet_b4': {
-        'name': 'efficientnet_b4',
-        'description': 'EfficientNet-B4 from torchvision (pretrained on ImageNet)',
-        'architecture': 'EfficientNet',
-        'source': 'torchvision',
-        'model_func': lambda: models.efficientnet_b4(weights=models.EfficientNet_B4_Weights.DEFAULT),
-        'input_size': 380,
-        'modify_classifier': True,
-        'classifier_attr': 'classifier',
-        'classifier_in_features': 1792,
-        'recommended_threshold': 0.5,
-    },
-    'efficientnet_b7': {
-        'name': 'efficientnet_b7',
-        'description': 'EfficientNet-B7 from torchvision (high accuracy, larger model)',
-        'architecture': 'EfficientNet',
-        'source': 'torchvision',
-        'model_func': lambda: models.efficientnet_b7(weights=models.EfficientNet_B7_Weights.DEFAULT),
-        'input_size': 600,
-        'modify_classifier': True,
-        'classifier_attr': 'classifier',
-        'classifier_in_features': 2560,
-        'recommended_threshold': 0.5,
-    },
-    'efficientnet_b4_timm': {
-        'name': 'efficientnet_b4',
-        'description': 'EfficientNet-B4 from timm (pretrained on ImageNet)',
-        'architecture': 'EfficientNet',
-        'source': 'timm',
-        'model_name': 'efficientnet_b4',
-        'input_size': 380,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'efficientnet_b7_timm': {
-        'name': 'efficientnet_b7',
-        'description': 'EfficientNet-B7 from timm (high accuracy, larger model)',
-        'architecture': 'EfficientNet',
-        'source': 'timm',
-        'model_name': 'efficientnet_b7',
-        'input_size': 600,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'xception': {
-        'name': 'xception',
-        'description': 'Xception architecture (excellent for deepfake detection)',
-        'architecture': 'Xception',
-        'source': 'timm',
-        'model_name': 'xception',
-        'input_size': 299,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'xception41': {
-        'name': 'xception41',
-        'description': 'Xception-41 variant (balanced performance)',
-        'architecture': 'Xception',
-        'source': 'timm',
-        'model_name': 'xception41',
-        'input_size': 299,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'xception65': {
-        'name': 'xception65',
-        'description': 'Xception-65 variant (higher capacity)',
-        'architecture': 'Xception',
-        'source': 'timm',
-        'model_name': 'xception65',
-        'input_size': 299,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'xception71': {
-        'name': 'xception71',
-        'description': 'Xception-71 deeper variant (enhanced for deepfake detection)',
-        'architecture': 'Xception',
-        'source': 'timm',
-        'model_name': 'xception71',
-        'input_size': 299,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'resnet34': {
-        'name': 'resnet34',
-        'description': 'ResNet-34 from torchvision (balanced speed and accuracy)',
-        'architecture': 'ResNet',
-        'source': 'torchvision',
-        'model_func': lambda: models.resnet34(weights=models.ResNet34_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'fc',
-        'classifier_in_features': 512,
-        'recommended_threshold': 0.5,
-    },
-    'resnet50': {
-        'name': 'resnet50',
-        'description': 'ResNet-50 from torchvision (pretrained on ImageNet)',
-        'architecture': 'ResNet',
-        'source': 'torchvision',
-        'model_func': lambda: models.resnet50(weights=models.ResNet50_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'fc',
-        'classifier_in_features': 2048,
-        'recommended_threshold': 0.5,
-    },
-    'resnet101': {
-        'name': 'resnet101',
-        'description': 'ResNet-101 from torchvision (pretrained on ImageNet)',
-        'architecture': 'ResNet',
-        'source': 'torchvision',
-        'model_func': lambda: models.resnet101(weights=models.ResNet101_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'fc',
-        'classifier_in_features': 2048,
-        'recommended_threshold': 0.5,
-    },
-    'vit_b_16': {
-        'name': 'vit_b_16',
-        'description': 'Vision Transformer B/16 from torchvision',
-        'architecture': 'ViT',
-        'source': 'torchvision',
-        'model_func': lambda: models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'heads',
-        'classifier_in_features': 768,
-        'recommended_threshold': 0.5,
-    },
-    'deit_base': {
-        'name': 'deit_base_patch16_224',
-        'description': 'DeiT Base (Data-efficient Image Transformer) - efficient training',
-        'architecture': 'DeiT',
-        'source': 'timm',
-        'model_name': 'deit_base_patch16_224',
-        'input_size': 224,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'deit_small': {
-        'name': 'deit_small_patch16_224',
-        'description': 'DeiT Small (Data-efficient Image Transformer) - faster variant',
-        'architecture': 'DeiT',
-        'source': 'timm',
-        'model_name': 'deit_small_patch16_224',
-        'input_size': 224,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'deit_tiny': {
-        'name': 'deit_tiny_patch16_224',
-        'description': 'DeiT Tiny (Data-efficient Image Transformer) - lightweight',
-        'architecture': 'DeiT',
-        'source': 'timm',
-        'model_name': 'deit_tiny_patch16_224',
-        'input_size': 224,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'swin_b': {
-        'name': 'swin_b',
-        'description': 'Swin Transformer Base from torchvision (hierarchical vision transformer)',
-        'architecture': 'Swin Transformer',
-        'source': 'torchvision',
-        'model_func': lambda: models.swin_b(weights=models.Swin_B_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'head',
-        'classifier_in_features': 1024,
-        'recommended_threshold': 0.5,
-    },
-    'swin_t': {
-        'name': 'swin_t',
-        'description': 'Swin Transformer Tiny from torchvision (faster, lighter version)',
-        'architecture': 'Swin Transformer',
-        'source': 'torchvision',
-        'model_func': lambda: models.swin_t(weights=models.Swin_T_Weights.DEFAULT),
-        'input_size': 224,
-        'modify_classifier': True,
-        'classifier_attr': 'head',
-        'classifier_in_features': 768,
-        'recommended_threshold': 0.5,
-    },
-    'swin_v2_b': {
-        'name': 'swin_v2_b',
-        'description': 'Swin Transformer V2 Base from torchvision (improved version)',
-        'architecture': 'Swin Transformer',
-        'source': 'torchvision',
-        'model_func': lambda: models.swin_v2_b(weights=models.Swin_V2_B_Weights.DEFAULT),
-        'input_size': 256,
-        'modify_classifier': True,
-        'classifier_attr': 'head',
-        'classifier_in_features': 1024,
-        'recommended_threshold': 0.5,
-    },
-    'swin_base_timm': {
-        'name': 'swin_base_patch4_window7_224',
-        'description': 'Swin Transformer Base from timm (hierarchical vision transformer)',
-        'architecture': 'Swin Transformer',
-        'source': 'timm',
-        'model_name': 'swin_base_patch4_window7_224',
-        'input_size': 224,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    'swin_large_timm': {
-        'name': 'swin_large_patch4_window7_224',
-        'description': 'Swin Transformer Large from timm (high capacity model)',
-        'architecture': 'Swin Transformer',
-        'source': 'timm',
-        'model_name': 'swin_large_patch4_window7_224',
-        'input_size': 224,
-        'modify_classifier': True,
-        'recommended_threshold': 0.5,
-    },
-    
-    # Nonescape Models
-    'nonescape-mini': {
-        'name': 'nonescape-mini',
-        'description': 'Nonescape Mini - EfficientNet v2 (fast, lightweight)',
-        'architecture': 'EfficientNet',
-        'source': 'nonescape',
-        'model_path': 'Models/nonescape-mini-v0.safetensors',  # User must provide path to .safetensors file
-        'use_mini': True,
-        'recommended_threshold': 0.5,
-    },
-    'nonescape-full': {
-        'name': 'nonescape-full',
-        'description': 'Nonescape Full - ViT + EfficientNet (high accuracy)',
-        'architecture': 'ViT + EfficientNet',
-        'source': 'nonescape',
-        'model_path': 'Models/nonescape-v0.safetensors',  # User must provide path to .safetensors file
-        'use_mini': False,
-        'recommended_threshold': 0.5,
-    },
-    
-    # UniversalFakeDetectV2 Model
-    'universal-fake-v2': {
-        'name': 'UniversalFakeDetectV2',
-        'description': 'UniversalFakeDetectV2 - CLIP-based universal fake detector (TrueMedia)',
-        'architecture': 'CLIP + MLP',
-        'source': 'universal_fake_v2',
-        'model_path': 'pretrained_weights/continued_ft_from_concat_20240930.pth',
-        'recommended_threshold': 0.5,
-    },
-    
-    # DistilDIRE Models
-    'distil-dire-celebahq': {
-        'name': 'DistilDIRE-CelebA-HQ',
-        'description': 'DistilDIRE trained on CelebA-HQ dataset - lightweight DIRE variant',
-        'architecture': 'ResNet50 + DDIM',
-        'source': 'distil_dire',
-        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
-        'model_type': 'distil_dire',
-        'inference_mode': 'img_only',  # TEST: Changed from 'full' to debug epsilon issues
-        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
-    },
-    # Debug version with full mode
-    'distil-dire-celebahq-full': {
-        'name': 'DistilDIRE-CelebA-HQ-Full',
-        'description': 'DistilDIRE trained on CelebA-HQ dataset - full mode with epsilon',
-        'architecture': 'ResNet50 + DDIM',
-        'source': 'distil_dire',
-        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
-        'model_type': 'distil_dire',
-        'inference_mode': 'full',  # full, eps_only, img_only
-        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
-    },
-    'distil-dire-imagenet': {
-        'name': 'DistilDIRE-ImageNet',
-        'description': 'DistilDIRE trained on ImageNet dataset - general purpose detection',
-        'architecture': 'ResNet50 + DDIM',
-        'source': 'distil_dire',
-        'model_path': 'Models/distil_dire/imagenet-distil-dire-11e.pth',
-        'model_type': 'distil_dire',
-        'inference_mode': 'full',
-        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
-    },
-    'distil-dire-eps-celebahq': {
-        'name': 'DistilDIRE-EPS-CelebA-HQ',
-        'description': 'DistilDIRE using only epsilon (noise) - CelebA-HQ variant (fastest)',
-        'architecture': 'ResNet50 (EPS only)',
-        'source': 'distil_dire',
-        'model_path': 'Models/distil_dire/celebahq-distil-dire-34e.pth',
-        'model_type': 'distil_dire',
-        'inference_mode': 'eps_only',
-        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
-    },
-    'distil-dire-eps-imagenet': {
-        'name': 'DistilDIRE-EPS-ImageNet',
-        'description': 'DistilDIRE using only epsilon (noise) - ImageNet variant (fastest)',
-        'architecture': 'ResNet50 (EPS only)',
-        'source': 'distil_dire',
-        'model_path': 'Models/distil_dire/imagenet-distil-dire-11e.pth',
-        'model_type': 'distil_dire',
-        'inference_mode': 'eps_only',
-        'adm_model_path': 'Models/distil_dire/256x256_diffusion_uncond.pt',
-        'recommended_threshold': 0.5,
-    },
-    
-    # SEResNet-50 Models
-    'seresnet50': {
-        'name': 'SEResNet-50',
-        'description': 'SEResNet-50 with Squeeze-and-Excitation blocks (adapted from ImageNet for deepfake detection)',
-        'architecture': 'SEResNet-50',
-        'source': 'seresnet50',
-        'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
-        'input_size': 224,
-        'recommended_threshold': 0.5,  # Optimal threshold for adapted pretrained model
-    },
-    'seresnet50-pretrained': {
-        'name': 'SEResNet-50-Pretrained',
-        'description': 'SEResNet-50 pretrained on ImageNet (same as seresnet50, kept for compatibility)',
-        'architecture': 'SEResNet-50',
-        'source': 'seresnet50',
-        'model_path': None,  # Uses ImageNet pretrained weights from Models folder (no online download)
-        'input_size': 224,
-        'recommended_threshold': 0.5,  # Optimal threshold based on score distribution analysis
-    },    
-    # EfficientNet-B7 Model (Noisy Student)
-    'efficientnet-b7-ns': {
-        'name': 'EfficientNet-B7-NoisyStudent',
-        'description': 'EfficientNet-B7 with Noisy Student weights (DFDC 3rd place solution - high accuracy)',
-        'architecture': 'EfficientNet-B7',
-        'source': 'efficientnet-b7',
-        'model_path': 'Models/EfficientNet-B7/noisy_student_efficientnet-b7',  # Local weights directory
-        'input_size': 224,
-        'recommended_threshold': 0.5,
-    },
-}
 
 
 def list_available_models() -> Dict[str, Dict[str, Any]]:
@@ -1282,8 +919,10 @@ class EnsembleDetector:
                         logger.warning(f"⚠ SEResNet-50 model not found at {model_path}, will use pretrained model from torch.hub")
                         model_path = None
                     
+                    model_type = config.get('model_type', 'pretrained')  # Default to 'pretrained'
                     detector = SEResNet50Detector(
                         model_path=model_path,
+                        model_type=model_type,
                         device=str(self.device),
                         threshold=threshold,
                         input_size=input_size,
@@ -1318,6 +957,31 @@ class EnsembleDetector:
                     self.detectors[key] = self._wrap_efficientnet_b7_detector(detector, key)
                     if self.debug:
                         logger.info(f"[OK] Loaded EfficientNet-B7 model: {key}")
+                
+                elif config['source'] == 'ftcn':
+                    # Load FTCN model
+                    if not FTCN_AVAILABLE:
+                        logger.warning(f"⚠ Skipping {key}: FTCN detector not available")
+                        continue
+                    
+                    model_path = config.get('model_path')
+                    input_size = config.get('input_size', 224)
+                    
+                    # Check if model file exists
+                    if model_path and not os.path.exists(model_path):
+                        logger.warning(f"⚠ Skipping {key}: FTCN model not found at {model_path}")
+                        logger.info(f"   Please ensure the file exists at: {model_path}")
+                        continue
+                    
+                    detector = FTCNDetector(
+                        model_path=model_path,
+                        device=str(self.device),
+                        input_size=input_size,
+                        debug=self.debug
+                    )
+                    self.detectors[key] = self._wrap_ftcn_detector(detector, key)
+                    if self.debug:
+                        logger.info(f"[OK] Loaded FTCN model: {key}")
                     
             except Exception as e:
                 logger.warning(f"⚠ Failed to load model {key}: {e}")
@@ -1648,6 +1312,33 @@ class EnsembleDetector:
                 )
         
         return EfficientNetB7Wrapper(detector, model_key)
+    
+    def _wrap_ftcn_detector(self, detector, model_key: str):
+        """Wrap FTCN detector to match DeepfakeImageDetector interface"""
+        class FTCNWrapper:
+            """Wrapper to make FTCN detector compatible with DeepfakeImageDetector interface"""
+            
+            def __init__(self, ftcn_detector, model_key):
+                self.ftcn_detector = ftcn_detector
+                self.model_key = model_key
+                self.model_name = ftcn_detector.model_name
+            
+            def detect(self, image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
+                      threshold: float = 0.5) -> DeepfakeDetectionResult:
+                """Detect deepfake using FTCN model"""
+                # Convert FTCN result to DeepfakeDetectionResult
+                ftcn_result = self.ftcn_detector.detect(image_input, threshold)
+                
+                return DeepfakeDetectionResult(
+                    is_deepfake=ftcn_result.is_deepfake,
+                    confidence=ftcn_result.confidence,
+                    scores=ftcn_result.scores,
+                    processing_time=ftcn_result.processing_time,
+                    image_path=ftcn_result.image_path,
+                    model_name=self.model_name
+                )
+        
+        return FTCNWrapper(detector, model_key)
     
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
