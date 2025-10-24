@@ -199,11 +199,24 @@ class DeepfakeImageDetector:
     def _load_model(self):
         """Load the pre-trained model and processor"""
         try:
+            # Determine model path - use local if available, otherwise HuggingFace
+            model_path = self.model_name
+            if self.model_info and self.model_info.get('local_path'):
+                local_path = self.model_info['local_path']
+                # Check if local path exists
+                if os.path.exists(local_path):
+                    model_path = local_path
+                    if self.debug:
+                        logger.info(f"Using local model from: {local_path}")
+                else:
+                    if self.debug:
+                        logger.info(f"Local path {local_path} not found, downloading from HuggingFace")
+            
             if self.debug:
-                logger.info(f"Loading model: {self.model_name}")
+                logger.info(f"Loading model: {model_path}")
             
             # Load processor and model
-            self.processor = AutoImageProcessor.from_pretrained(self.model_name)
+            self.processor = AutoImageProcessor.from_pretrained(model_path)
             
             # Try different model architectures
             model_loaded = False
@@ -212,7 +225,7 @@ class DeepfakeImageDetector:
             if self.model_info and self.model_info['architecture'] == 'SigLIP':
                 try:
                     self.model = SiglipForImageClassification.from_pretrained(
-                        self.model_name,
+                        model_path,
                         torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
                     )
                     if self.debug:
@@ -225,7 +238,7 @@ class DeepfakeImageDetector:
             if not model_loaded:
                 try:
                     self.model = AutoModelForImageClassification.from_pretrained(
-                        self.model_name,
+                        model_path,
                         torch_dtype=torch.float32 if self.device.type == 'cpu' else torch.float16
                     )
                     if self.debug:

@@ -23,6 +23,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
+        'local_path': 'Models/dimavit',  # Local pre-downloaded weights
     },   
     'organika-sdxl': {
         'name': 'Organika/sdxl-detector',
