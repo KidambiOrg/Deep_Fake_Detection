@@ -1270,9 +1270,14 @@ class EnsembleDetector:
                 # Convert SEResNet-50 result to DeepfakeDetectionResult
                 seresnet50_result = self.seresnet50_detector.detect_single(image_input, use_ensemble=False)
                 
+                # Apply threshold to determine prediction (SEResNet's detect_single uses fake_prob > real_prob logic)
+                # Override with threshold-based prediction for consistency with other models
+                is_deepfake = seresnet50_result.fake_probability >= threshold
+                confidence = seresnet50_result.fake_probability if is_deepfake else seresnet50_result.real_probability
+                
                 return DeepfakeDetectionResult(
-                    is_deepfake=seresnet50_result.is_fake,
-                    confidence=seresnet50_result.confidence,
+                    is_deepfake=is_deepfake,
+                    confidence=confidence,
                     scores={
                         'Real': seresnet50_result.real_probability,
                         'Fake': seresnet50_result.fake_probability

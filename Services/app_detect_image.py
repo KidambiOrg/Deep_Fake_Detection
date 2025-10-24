@@ -734,7 +734,7 @@ def main(path=None, debug=False):
     try:
         # Configuration
         threshold = 0.20
-        voting_method = 'median'
+        voting_method = 'weighted'
         
         # Load ensemble models into memory once at startup
         if debug:
