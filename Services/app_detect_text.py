@@ -9,6 +9,8 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from dataclasses import asdict
+from pathlib import Path
+import shutil
 
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,6 +18,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from textdetectionlib.text_detection_ensemble import TextDetectionEnsemble, EnsembleResult
+from utils.blob_storage_helper import get_blob_loader
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -29,7 +32,8 @@ class TextDetectionApp:
     def __init__(
         self,
         models_dir: Optional[str] = None,
-        voting_method: str = "weighted"
+        voting_method: str = "weighted",
+        use_blob_storage: bool = True
     ):
         """
         Initialize the text detection application
@@ -37,9 +41,14 @@ class TextDetectionApp:
         Args:
             models_dir: Directory containing trained models
             voting_method: Voting strategy for ensemble ("majority", "weighted", "unanimous")
+            use_blob_storage: Whether to download models from Azure Blob Storage
         """
         self.models_dir = models_dir or "Models/text_detection"
         self.voting_method = voting_method
+        
+        # Download models from blob storage if configured
+        if use_blob_storage:
+            self._download_models_from_blob()
         
         # Configure detector paths
         bert_config = {
@@ -82,6 +91,40 @@ class TextDetectionApp:
         )
         
         logger.info("Text detection app initialized successfully")
+    
+    def _download_models_from_blob(self):
+        """Download text detection models from Azure Blob Storage"""
+        blob_loader = get_blob_loader()
+        if not blob_loader or not blob_loader.blob_service_client:
+            logger.info("Blob storage not configured, using local models")
+            return
+        
+        logger.info("Downloading text detection models from blob storage...")
+        
+        # Define blob paths for text models
+        text_models = [
+            ('models', 'text_detection/bert_ml_classifier.pkl'),
+            ('models', 'text_detection/bow_ml_classifier.pkl'),
+            ('models', 'text_detection/bow_ml_vectorizer.pkl'),
+            ('models', 'text_detection/charcnn_model.h5'),
+            ('models', 'text_detection/charcnn_tokenizer.pkl'),
+            ('models', 'text_detection/distilbert_ml_classifier.pkl')
+        ]
+        
+        # Create models directory if it doesn't exist
+        os.makedirs(self.models_dir, exist_ok=True)
+        
+        # Download each model
+        for container, blob_path in text_models:
+            local_path = blob_loader.download_model(container, blob_path)
+            if local_path:
+                # Copy to expected location
+                filename = Path(blob_path).name
+                dest_path = Path(self.models_dir) / filename
+                
+                if not dest_path.exists():
+                    shutil.copy(local_path, dest_path)
+                    logger.info(f"Copied {filename} to {dest_path}")
     
     def detect_text(self, text: str) -> Dict[str, Any]:
         """

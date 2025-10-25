@@ -19,80 +19,136 @@ from outputModel.detection_output_model import (
 )
 from utils.exif_extractor import ExifExtractor
 from utils.c2pa_extractor import C2paExtractor
+from utils.blob_storage_helper import get_blob_loader
 import json
 import threading
 import time
+import logging
 from io import BytesIO
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # Global ensemble detector - initialized lazily to avoid cold start timeout
 _ensemble_detector = None
 _ensemble_loading = False
 _ensemble_lock = threading.Lock()
 
-def get_ensemble_detector(debug=False, timeout=300):
-    """Get or create the global ensemble detector instance with lazy loading
+def download_models_from_blob_storage():
+    """Download models from Azure Blob Storage if configured.
+    Updates the MODEL_REGISTRY with local paths to downloaded models.
+    """
+    blob_loader = get_blob_loader()
+    if not blob_loader or not blob_loader.blob_service_client:
+        logger.info("Blob storage not configured, using local models")
+        return
     
-    This ensures the ensemble is created only once, with proper handling
-    for concurrent requests during initialization.
+    logger.info("Checking for models in Azure Blob Storage...")
+    
+    # Download models that have blob_storage configuration
+    from imagedetectionlib.model_registry import MODEL_REGISTRY
+    for model_key, model_info in MODEL_REGISTRY.items():
+        if 'blob_storage' not in model_info:
+            continue
+            
+        blob_config = model_info['blob_storage']
+        
+        # Determine if it's a single file or directory
+        if 'blob' in blob_config:
+            # Single file (e.g., .pth, .safetensors)
+            local_path = blob_loader.download_model(
+                container_name=blob_config['container'],
+                blob_name=blob_config['blob']
+            )
+            
+            if local_path and 'model_path' in model_info:
+                model_info['model_path'] = local_path
+                logger.info(f"Updated {model_key} model path to: {local_path}")
+        
+        elif 'path' in blob_config:
+            # Directory (e.g., HuggingFace model with multiple files)
+            local_dir = blob_loader.download_directory(
+                container_name=blob_config['container'],
+                blob_prefix=blob_config['path']
+            )
+            
+            if local_dir:
+                # Update model path to use downloaded directory
+                if 'local_path' in model_info:
+                    model_info['local_path'] = str(local_dir)
+                    logger.info(f"Updated {model_key} model directory to: {local_dir}")
+                else:
+                    # For HuggingFace models, update the name to point to local directory
+                    model_info['local_path'] = str(local_dir)
+                    logger.info(f"Set {model_key} local path to: {local_dir}")
+
+
+def get_ensemble_detector(debug=False, timeout=300):
+    """
+    Get or initialize the global ensemble detector.
+    Uses lazy loading to avoid cold start timeouts.
+    Downloads models from Azure Blob Storage if configured.
     
     Args:
-        debug: Enable debug logging (default: False)
-        timeout: Maximum wait time in seconds for ensemble to load (default: 300)
-        
+        debug: Enable debug logging
+        timeout: Maximum time to wait for loading (seconds)
+    
     Returns:
         EnsembleDetector instance or None if still loading
     """
-    global _ensemble_detector, _ensemble_loading
+    global _ensemble_detector, _ensemble_loading, _ensemble_lock
     
     # If already loaded, return immediately
     if _ensemble_detector is not None:
         return _ensemble_detector
     
+    # Prevent multiple simultaneous initialization attempts
     with _ensemble_lock:
         # Double-check after acquiring lock
         if _ensemble_detector is not None:
             return _ensemble_detector
         
-        # If another thread is loading, wait for it
+        # Check if already loading
         if _ensemble_loading:
-            if debug:
-                print("Ensemble is being loaded by another thread, waiting...", file=sys.stderr)
-            
-            # Wait for the loading to complete
-            start_time = time.time()
-            while _ensemble_loading and (time.time() - start_time) < timeout:
-                time.sleep(1)
-            
-            # Check if loading completed
-            if _ensemble_detector is not None:
-                return _ensemble_detector
-            else:
-                raise TimeoutError("Ensemble loading timed out")
+            logger.info("Models are already being loaded by another request")
+            return None
         
-        # This thread will do the loading
+        # Mark as loading
         _ensemble_loading = True
-        if debug:
-            print("Starting ensemble detector initialization...", file=sys.stderr)
     
     try:
-        # Load the ensemble (outside the lock to allow other threads to wait)
-        detector = create_ensemble_detector(debug=debug)
+        logger.info("Starting ensemble detector initialization...")
         
-        with _ensemble_lock:
-            _ensemble_detector = detector
-            _ensemble_loading = False
-            if debug:
-                print("Ensemble detector loaded successfully!", file=sys.stderr)
+        # Download models from blob storage if configured
+        download_models_from_blob_storage()
         
+        # Initialize ensemble detector
+        start_time = time.time()
+        _ensemble_detector = EnsembleDetector(
+            model_keys=[
+                # HuggingFace models
+                'prithiv-v1',
+                'dima-vit',
+                'organika-sdxl',           
+                'nonescape-full',                              
+                # SEResNet-50 models (excellent architecture for deepfake detection)            
+                'seresnet50'              # Fine-tuned model (if available)            
+            ],
+            debug=debug
+        )
+        elapsed = time.time() - start_time
+        
+        logger.info(f"Ensemble detector initialized successfully in {elapsed:.2f} seconds")
         return _ensemble_detector
         
     except Exception as e:
+        logger.error(f"Failed to initialize ensemble detector: {e}")
+        logger.exception(e)
+        return None
+    finally:
+        # Mark loading as complete
         with _ensemble_lock:
             _ensemble_loading = False
-        if debug:
-            print(f"Error loading ensemble detector: {e}", file=sys.stderr)
-        raise
 
 
 def process_image(image_bytes):
@@ -248,28 +304,6 @@ def list_voting_methods():
     print("| Conservative detection | `dynamic_consensus` | Requires strong agreement |")
     print("| Real-time/speed critical | `majority` | Fastest computation |")
     print("| Mixed image types | `adaptive_threshold` | Adapts to uncertainty |")
-
-
-def create_ensemble_detector(debug=False):
-    """Create and return an ensemble detector with configured models
-    
-    Args:
-        debug: Enable debug logging (default: False)
-    """
-    return EnsembleDetector(
-        model_keys=[
-            
-            # HuggingFace models
-             'prithiv-v1',
-             'dima-vit',
-             'organika-sdxl',           
-            'nonescape-full',                              
-            # SEResNet-50 models (excellent architecture for deepfake detection)            
-            'seresnet50'              # Fine-tuned model (if available)            
-           
-        ],
-        debug=debug
-    )
 
 
 def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weighted'):
@@ -721,10 +755,21 @@ def main(path=None, debug=False):
         threshold = 0.20
         voting_method = 'weighted'
         
-        # Load ensemble models into memory once at startup
+        # Load ensemble models using the global detector (lazy loaded on first call)
         if debug:
             print("Loading ensemble models into memory...", file=sys.stderr)
-        ensemble = create_ensemble_detector(debug=debug)
+        
+        ensemble = get_ensemble_detector(debug=debug)
+        
+        if ensemble is None:
+            if debug:
+                print("Models are still loading. Please try again in a moment.", file=sys.stderr)
+            print(json.dumps({
+                "error": "Models are still loading. Please try again in a moment.",
+                "status": "loading"
+            }))
+            return
+        
         if debug:
             print("Models loaded successfully!", file=sys.stderr)
         

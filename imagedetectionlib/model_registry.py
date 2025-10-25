@@ -15,6 +15,11 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
         'recommended_threshold': 0.5,
+        # # Azure Blob Storage configuration (optional)
+        # 'blob_storage': {
+        #     'container': 'models',
+        #     'path': 'huggingface/prithivMLMods/deepfake-detector-model-v1'
+        # }
     },
     'dima-vit': {
         'name': 'dima806/deepfake_vs_real_image_detection',
@@ -24,7 +29,11 @@ MODEL_REGISTRY = {
         'labels': None,
         'recommended_threshold': 0.5,
         'local_path': 'Models/dimavit',  # Local pre-downloaded weights
-    },   
+        'blob_storage': {
+            'container': 'models',
+            'path': 'huggingface/dima806/deepfake_vs_real_image_detection'
+        }
+    },
     'organika-sdxl': {
         'name': 'Organika/sdxl-detector',
         'description': 'Specialized for Stable Diffusion generated images',
@@ -32,6 +41,10 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
+        # 'blob_storage': {
+        #     'container': 'models',
+        #     'path': 'huggingface/Organika/sdxl-detector'
+        # }
     },
     
     # Nonescape Models   
@@ -43,6 +56,10 @@ MODEL_REGISTRY = {
         'model_path': 'Models/nonescape-v0.safetensors',
         'use_mini': False,
         'recommended_threshold': 0.5,
+        'blob_storage': {
+            'container': 'models',
+            'blob': 'nonescape/nonescape-v0.safetensors'
+        }
     },
     
     
@@ -55,6 +72,11 @@ MODEL_REGISTRY = {
         'model_type': 'pretrained',  # Changed from 'complete' to 'pretrained'
         'model_path': 'Models/SERESNet_50/seresnet50_pretrained.pth',  # Use pretrained weights
         'recommended_threshold': 0.5,
+        'local_path': 'Models/SERESNet_50',  # Directory containing all model files
+        'blob_storage': {
+            'container': 'models',
+            'path': 'SERESNet_50'  # Upload entire directory
+        }
     },
     
     
