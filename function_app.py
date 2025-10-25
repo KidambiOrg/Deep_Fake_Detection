@@ -89,8 +89,8 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-@app.route(route="analzeImage", methods=["POST"])
-def analzeImage(req: func.HttpRequest) -> func.HttpResponse:
+@app.route(route="analyzeImage", methods=["POST"])
+def analyzeImage(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
     try:
@@ -126,8 +126,6 @@ def analzeImage(req: func.HttpRequest) -> func.HttpResponse:
             f"Error processing image: {str(e)}",
             status_code=500
         )
-
-
 
 
 

@@ -497,171 +497,168 @@ def generate_markdown_report(results_data, voting_method='weighted', threshold=0
     lines.append("# Deepfake Detection Results")
     lines.append("")
     
-    # Performance Metrics
-    total = len(results_data)
-    correct = sum(1 for d in results_data if d['is_correct'])
-    accuracy = (correct / total) * 100 if total > 0 else 0
+    # # Performance Metrics
+    # total = len(results_data)
+    # correct = sum(1 for d in results_data if d['is_correct'])
+    # accuracy = (correct / total) * 100 if total > 0 else 0
     
-    # Confusion matrix
-    true_positives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'FAKE')
-    false_positives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'FAKE')
-    true_negatives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'REAL')
-    false_negatives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'REAL')
+    # # Confusion matrix
+    # true_positives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'FAKE')
+    # false_positives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'FAKE')
+    # true_negatives = sum(1 for d in results_data if d['ground_truth'] == 'REAL' and d['prediction'] == 'REAL')
+    # false_negatives = sum(1 for d in results_data if d['ground_truth'] == 'FAKE' and d['prediction'] == 'REAL')
     
-    # Calculate precision, recall, F1
-    precision = (true_positives / (true_positives + false_positives)) * 100 if (true_positives + false_positives) > 0 else 0
-    recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
-    f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
+    # # Calculate precision, recall, F1
+    # precision = (true_positives / (true_positives + false_positives)) * 100 if (true_positives + false_positives) > 0 else 0
+    # recall = (true_positives / (true_positives + false_negatives)) * 100 if (true_positives + false_negatives) > 0 else 0
+    # f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
     
-    lines.append("## [STATS] Performance Metrics")
-    lines.append("")
-    lines.append(f"**Voting Method**: `{voting_method}`")
-    lines.append("")
+    # lines.append("## [STATS] Performance Metrics")
+    # lines.append("")
+    # lines.append(f"**Voting Method**: `{voting_method}`")
+    # lines.append("")
     
-    # Explain voting method
-    if voting_method == 'weighted' or voting_method == 'average':
-        lines.append(f"- Compares **average fake score vs average real score** (avg fake > avg real → FAKE)")
-        lines.append(f"- More robust for noisy images than simple majority voting")
-    elif voting_method == 'majority':
-        lines.append(f"- Uses **simple majority** vote (most models agree)")
-    elif voting_method == 'confidence_weighted':
-        lines.append(f"- Weights fake scores by each model's confidence")
-    elif voting_method == 'maximum':
-        lines.append(f"- Uses prediction from model with highest confidence")
-    elif voting_method == 'unanimous':
-        lines.append(f"- All models must agree")
-    elif voting_method == 'adaptive_threshold':
-        lines.append(f"- Adjusts threshold based on prediction variance (disagreement between models)")
-        lines.append(f"- Higher variance → higher threshold needed")
-    elif voting_method == 'median':
-        lines.append(f"- Uses **median fake score** instead of average (more robust to outliers)")
-    elif voting_method == 'robust_majority':
-        lines.append(f"- Excludes extreme outliers before majority voting using IQR method")
-        lines.append(f"- Best for handling models with very different sensitivities")
-    elif voting_method == 'dynamic_consensus':
-        lines.append(f"- Requires higher agreement when models disagree strongly")
-        lines.append(f"- Low disagreement: 50% majority | High disagreement: 75% majority")
-    elif voting_method == 'reliability_weighted':
-        lines.append(f"- Weights votes based on each model's estimated reliability")
-        lines.append(f"- Gives more weight to historically accurate models")
-    elif voting_method == 'bayesian':
-        lines.append(f"- Uses Bayesian inference to combine predictions probabilistically")
-        lines.append(f"- Accounts for model confidence and prior probabilities")
-    elif voting_method == 'entropy_weighted':
-        lines.append(f"- Weights predictions by certainty (low entropy = high weight)")
-        lines.append(f"- More certain predictions get higher influence")
-    elif voting_method == 'consensus_threshold':
-        lines.append(f"- Adapts threshold based on model consensus strength")
-        lines.append(f"- High consensus → lower threshold needed")
+    # # Explain voting method
+    # if voting_method == 'weighted' or voting_method == 'average':
+    #     lines.append(f"- Compares **average fake score vs average real score** (avg fake > avg real → FAKE)")
+    #     lines.append(f"- More robust for noisy images than simple majority voting")
+    # elif voting_method == 'majority':
+    #     lines.append(f"- Uses **simple majority** vote (most models agree)")
+    # elif voting_method == 'confidence_weighted':
+    #     lines.append(f"- Weights fake scores by each model's confidence")
+    # elif voting_method == 'maximum':
+    #     lines.append(f"- Uses prediction from model with highest confidence")
+    # elif voting_method == 'unanimous':
+    #     lines.append(f"- All models must agree")
+    # elif voting_method == 'adaptive_threshold':
+    #     lines.append(f"- Adjusts threshold based on prediction variance (disagreement between models)")
+    #     lines.append(f"- Higher variance → higher threshold needed")
+    # elif voting_method == 'median':
+    #     lines.append(f"- Uses **median fake score** instead of average (more robust to outliers)")
+    # elif voting_method == 'robust_majority':
+    #     lines.append(f"- Excludes extreme outliers before majority voting using IQR method")
+    #     lines.append(f"- Best for handling models with very different sensitivities")
+    # elif voting_method == 'dynamic_consensus':
+    #     lines.append(f"- Requires higher agreement when models disagree strongly")
+    #     lines.append(f"- Low disagreement: 50% majority | High disagreement: 75% majority")
+    # elif voting_method == 'reliability_weighted':
+    #     lines.append(f"- Weights votes based on each model's estimated reliability")
+    #     lines.append(f"- Gives more weight to historically accurate models")
+    # elif voting_method == 'bayesian':
+    #     lines.append(f"- Uses Bayesian inference to combine predictions probabilistically")
+    #     lines.append(f"- Accounts for model confidence and prior probabilities")
+    # elif voting_method == 'entropy_weighted':
+    #     lines.append(f"- Weights predictions by certainty (low entropy = high weight)")
+    #     lines.append(f"- More certain predictions get higher influence")
+    # elif voting_method == 'consensus_threshold':
+    #     lines.append(f"- Adapts threshold based on model consensus strength")
+    #     lines.append(f"- High consensus → lower threshold needed")
     
-    lines.append("")
-    lines.append(f"**Threshold**: {threshold}")
-    lines.append("")
-    lines.append(f"**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
-    lines.append(f"**Precision**: {precision:.2f}% (of predicted fakes, how many are actually fake)")
-    lines.append(f"**Recall**: {recall:.2f}% (of actual fakes, how many were detected)")
-    lines.append(f"**F1-Score**: {f1_score:.2f}%")
-    lines.append("")
+    # lines.append("")
+    # lines.append(f"**Threshold**: {threshold}")
+    # lines.append("")
+    # lines.append(f"**Overall Accuracy**: {accuracy:.2f}% ({correct}/{total})")
+    # lines.append(f"**Precision**: {precision:.2f}% (of predicted fakes, how many are actually fake)")
+    # lines.append(f"**Recall**: {recall:.2f}% (of actual fakes, how many were detected)")
+    # lines.append(f"**F1-Score**: {f1_score:.2f}%")
+    # lines.append("")
     
-    lines.append("### Confusion Matrix")
-    lines.append("```")
-    lines.append("                    Predicted")
-    lines.append("                FAKE      REAL")
-    lines.append(f"Actual FAKE     {true_positives:4d}      {false_negatives:4d}")
-    lines.append(f"       REAL     {false_positives:4d}      {true_negatives:4d}")
-    lines.append("```")
-    lines.append("")
+    # lines.append("### Confusion Matrix")
+    # lines.append("```")
+    # lines.append("                    Predicted")
+    # lines.append("                FAKE      REAL")
+    # lines.append(f"Actual FAKE     {true_positives:4d}      {false_negatives:4d}")
+    # lines.append(f"       REAL     {false_positives:4d}      {true_negatives:4d}")
+    # lines.append("```")
+    # lines.append("")
     
-    # Overall Results Table
-    lines.append("## [TARGET] Detection Results Summary")
+    # Overall Results Table   
     lines.append("")
-    lines.append("### Overall Results")
-    lines.append("")
-    lines.append("| Image | Ground Truth | Prediction | [OK]/[FAIL] | Confidence | Avg Fake | Avg Real | Voting |")
-    lines.append("|-------|--------------|------------|-----|------------|----------|----------|--------|")
-    
+    lines.append("| Image | Prediction | Confidence | Avg Fake | Avg Real | Voting |")
+    lines.append("|-------|------------|-------------|----------|----------|--------|")
+
     for data in results_data:
         correctness = "[OK]" if data['is_correct'] else "[FAIL]"
-        lines.append(f"| {data['image']} | {data['ground_truth']} | {data['prediction']} | {correctness} | "
+        lines.append(f"| {data['image']} | {data['prediction']} | "
                     f"{data['confidence']:.4f} ({data['confidence']*100:.1f}%) | "
                     f"{data['avg_fake_score']:.4f} | {data['avg_real_score']:.4f} | {data['voting_summary']} |")
     
     lines.append("")
     
-    # C2PA Summary
-    images_with_c2pa = sum(1 for d in results_data if d.get('has_c2pa', False))
-    if images_with_c2pa > 0:
-        lines.append("### 🔐 C2PA Content Credentials Summary")
-        lines.append("")
-        lines.append(f"**Images with C2PA data**: {images_with_c2pa}/{total}")
-        lines.append("")
-        lines.append("| Image | Has C2PA | Validation State | Claim Generator |")
-        lines.append("|-------|----------|------------------|-----------------|")
+    # # C2PA Summary
+    # images_with_c2pa = sum(1 for d in results_data if d.get('has_c2pa', False))
+    # if images_with_c2pa > 0:
+    #     lines.append("### 🔐 C2PA Content Credentials Summary")
+    #     lines.append("")
+    #     lines.append(f"**Images with C2PA data**: {images_with_c2pa}/{total}")
+    #     lines.append("")
+    #     lines.append("| Image | Has C2PA | Validation State | Claim Generator |")
+    #     lines.append("|-------|----------|------------------|-----------------|")
         
-        for data in results_data:
-            if data.get('has_c2pa', False):
-                c2pa_info = data.get('c2pa_info', {})
-                validation = c2pa_info.get('validationState', 'N/A')
-                claim_gen = 'N/A'
-                # activeManifest is now a String (label), get actual manifest from manifests dict
-                active_manifest_label = c2pa_info.get('activeManifest')
-                if active_manifest_label and isinstance(active_manifest_label, str):
-                    manifests = c2pa_info.get('manifests', {})
-                    if active_manifest_label in manifests:
-                        active_manifest_data = manifests[active_manifest_label]
-                        claim_gen = active_manifest_data.get('claimGenerator', 'N/A')
-                lines.append(f"| {data['image']} | [OK] | {validation} | {claim_gen} |")
+    #     for data in results_data:
+    #         if data.get('has_c2pa', False):
+    #             c2pa_info = data.get('c2pa_info', {})
+    #             validation = c2pa_info.get('validationState', 'N/A')
+    #             claim_gen = 'N/A'
+    #             # activeManifest is now a String (label), get actual manifest from manifests dict
+    #             active_manifest_label = c2pa_info.get('activeManifest')
+    #             if active_manifest_label and isinstance(active_manifest_label, str):
+    #                 manifests = c2pa_info.get('manifests', {})
+    #                 if active_manifest_label in manifests:
+    #                     active_manifest_data = manifests[active_manifest_label]
+    #                     claim_gen = active_manifest_data.get('claimGenerator', 'N/A')
+    #             lines.append(f"| {data['image']} | [OK] | {validation} | {claim_gen} |")
         
-        lines.append("")
+    #     lines.append("")
     
-    # Individual Model Results
-    lines.append("### 📋 Individual Model Results")
-    lines.append("")
+    # # Individual Model Results
+    # lines.append("### 📋 Individual Model Results")
+    # lines.append("")
     
-    for data in results_data:
-        if data['individual_results']:
-            correctness_icon = "[OK]" if data['is_correct'] else "[FAIL]"
-            lines.append(f"#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})")
-            lines.append("")
-            lines.append("| Model | Prediction | Confidence | Fake Score | Real Score |")
-            lines.append("|-------|------------|------------|------------|------------|")
+    # for data in results_data:
+    #     if data['individual_results']:
+    #         correctness_icon = "[OK]" if data['is_correct'] else "[FAIL]"
+    #         lines.append(f"#### {correctness_icon} {data['image']} (Ground Truth: {data['ground_truth']})")
+    #         lines.append("")
+    #         lines.append("| Model | Prediction | Confidence | Fake Score | Real Score |")
+    #         lines.append("|-------|------------|------------|------------|------------|")
             
-            for individual in data['individual_results']:
-                pred = 'FAKE' if individual.is_deepfake else 'REAL'
+    #         for individual in data['individual_results']:
+    #             pred = 'FAKE' if individual.is_deepfake else 'REAL'
                 
-                # Extract fake and real scores from the model's scores dictionary
-                fake_score = 0.0
-                real_score = 0.0
+    #             # Extract fake and real scores from the model's scores dictionary
+    #             fake_score = 0.0
+    #             real_score = 0.0
                 
-                # Check for various fake label formats
-                for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
-                                'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
-                                'generated', 'Generated', 'synthetic', 'Synthetic', 
-                                'AI', 'ai', 'LABEL_1', '1']:
-                    if fake_key in individual.scores:
-                        fake_score = individual.scores[fake_key]
-                        break
+    #             # Check for various fake label formats
+    #             for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
+    #                             'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
+    #                             'generated', 'Generated', 'synthetic', 'Synthetic', 
+    #                             'AI', 'ai', 'LABEL_1', '1']:
+    #                 if fake_key in individual.scores:
+    #                     fake_score = individual.scores[fake_key]
+    #                     break
                 
-                # Check for various real label formats
-                for real_key in ['human', 'Human', 'HUMAN',
-                                'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
-                                'genuine', 'Genuine', 'LABEL_0', '0']:
-                    if real_key in individual.scores:
-                        real_score = individual.scores[real_key]
-                        break
+    #             # Check for various real label formats
+    #             for real_key in ['human', 'Human', 'HUMAN',
+    #                             'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
+    #                             'genuine', 'Genuine', 'LABEL_0', '0']:
+    #                 if real_key in individual.scores:
+    #                     real_score = individual.scores[real_key]
+    #                     break
                 
-                # If still no scores found, try to infer from available scores
-                if fake_score == 0.0 and real_score == 0.0 and individual.scores:
-                    scores_list = list(individual.scores.values())
-                    if len(scores_list) >= 2:
-                        real_score = scores_list[0]
-                        fake_score = scores_list[1]
+    #             # If still no scores found, try to infer from available scores
+    #             if fake_score == 0.0 and real_score == 0.0 and individual.scores:
+    #                 scores_list = list(individual.scores.values())
+    #                 if len(scores_list) >= 2:
+    #                     real_score = scores_list[0]
+    #                     fake_score = scores_list[1]
                 
-                lines.append(f"| {individual.model_name} | {pred} | "
-                           f"{individual.confidence:.4f} ({individual.confidence*100:.1f}%) | "
-                           f"{fake_score:.4f} | {real_score:.4f} |")
+    #             lines.append(f"| {individual.model_name} | {pred} | "
+    #                        f"{individual.confidence:.4f} ({individual.confidence*100:.1f}%) | "
+    #                        f"{fake_score:.4f} | {real_score:.4f} |")
             
-            lines.append("")
+    #         lines.append("")
     
     return "\n".join(lines)
  
