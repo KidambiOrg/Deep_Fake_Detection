@@ -14,12 +14,7 @@ MODEL_REGISTRY = {
         'architecture': 'SigLIP',
         'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
-        'recommended_threshold': 0.5,
-        # # Azure Blob Storage configuration (optional)
-        # 'blob_storage': {
-        #     'container': 'models',
-        #     'path': 'huggingface/prithivMLMods/deepfake-detector-model-v1'
-        # }
+        'recommended_threshold': 0.5        
     },
     'dima-vit': {
         'name': 'dima806/deepfake_vs_real_image_detection',
@@ -40,11 +35,7 @@ MODEL_REGISTRY = {
         'architecture': 'Custom',
         'source': 'huggingface',
         'labels': None,
-        'recommended_threshold': 0.5,
-        # 'blob_storage': {
-        #     'container': 'models',
-        #     'path': 'huggingface/Organika/sdxl-detector'
-        # }
+        'recommended_threshold': 0.5 
     },
     
     # Nonescape Models   
