@@ -8,7 +8,7 @@ if parent_dir not in sys.path:
 
 from imagedetectionlib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult
 from imagedetectionlib.model_registry import list_available_models
-from outputModel.detection_output_model import (
+from outputModel.image_detection_output_model import (
     DetectionOutput,
     ImageDetectionResult,
     VotingResult,

@@ -1,7 +1,7 @@
 """
 Output models for deepfake detection results
 """
-from .detection_output_model import (
+from .image_detection_output_model import (
     DetectionOutput,
     ImageDetectionResult,
     VotingResult,
