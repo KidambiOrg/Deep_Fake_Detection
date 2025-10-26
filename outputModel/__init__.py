@@ -8,11 +8,17 @@ from .image_detection_output_model import (
     IndividualModelResult,
     ExifData
 )
+from .text_detection_output_model import (
+    TextDetectionResult,
+    IndividualModelScore
+)
 
 __all__ = [
     'DetectionOutput',
     'ImageDetectionResult',
     'VotingResult',
     'IndividualModelResult',
-    'ExifData'
+    'ExifData',
+    'TextDetectionResult',
+    'IndividualModelScore'
 ]

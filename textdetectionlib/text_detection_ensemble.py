@@ -3,39 +3,16 @@ Ensemble module for combining multiple text detection models
 """
 import numpy as np
 from typing import List, Dict, Optional, Literal
-from dataclasses import dataclass
 import logging
 
 from textdetectionlib.detector_bert_ml import DetectorBertML, BertMLResult
 from textdetectionlib.detector_bow_ml import DetectorBowML, BowMLResult
 from textdetectionlib.detector_charcnn import DetectorCharCNN, CharCNNResult
 from textdetectionlib.detector_distilbert import DetectorDistilBertML, DistilBertMLResult
+from outputModel.text_detection_output_model import TextDetectionResult, IndividualModelScore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class IndividualModelScore:
-    """Individual model prediction"""
-    model_name: str
-    prediction: str  # "bot" or "human"
-    confidence: float
-    bot_score: float
-    human_score: float
-
-
-@dataclass
-class EnsembleResult:
-    """Ensemble prediction result"""
-    text: str
-    prediction: str  # "AI-generated" or "human-generated"
-    confidence: float
-    average_bot_score: float
-    average_human_score: float
-    voting_method: str
-    individual_scores: List[IndividualModelScore]
-    voting_breakdown: Dict[str, int]  # {"bot": count, "human": count}
 
 
 class TextDetectionEnsemble:
@@ -213,7 +190,7 @@ class TextDetectionEnsemble:
             # No unanimous agreement - fall back to majority
             return self._majority_voting(individual_scores)
     
-    def detect(self, text: str) -> EnsembleResult:
+    def detect(self, text: str) -> TextDetectionResult:
         """
         Detect text using ensemble of models
         
@@ -221,7 +198,7 @@ class TextDetectionEnsemble:
             text: Input text to classify
             
         Returns:
-            EnsembleResult with aggregated prediction
+            TextDetectionResult with aggregated prediction
         """
         individual_scores = []
         
@@ -289,7 +266,7 @@ class TextDetectionEnsemble:
         avg_bot_score = float(np.mean([s.bot_score for s in individual_scores]))
         avg_human_score = float(np.mean([s.human_score for s in individual_scores]))
         
-        return EnsembleResult(
+        return TextDetectionResult(
             text=text,
             prediction=final_prediction,
             confidence=confidence,
@@ -300,7 +277,7 @@ class TextDetectionEnsemble:
             voting_breakdown=voting_breakdown
         )
     
-    def detect_batch(self, texts: List[str]) -> List[EnsembleResult]:
+    def detect_batch(self, texts: List[str]) -> List[TextDetectionResult]:
         """
         Detect multiple texts in batch
         
@@ -308,7 +285,7 @@ class TextDetectionEnsemble:
             texts: List of input texts
             
         Returns:
-            List of EnsembleResult objects
+            List of TextDetectionResult objects
         """
         results = []
         for i, text in enumerate(texts):

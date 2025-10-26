@@ -7,8 +7,7 @@ import argparse
 import sys
 import os
 import logging
-from typing import Optional, Dict, Any
-from dataclasses import asdict
+from typing import Optional, Literal
 from pathlib import Path
 import shutil
 
@@ -17,7 +16,8 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from textdetectionlib.text_detection_ensemble import TextDetectionEnsemble, EnsembleResult
+from textdetectionlib.text_detection_ensemble import TextDetectionEnsemble
+from outputModel.text_detection_output_model import TextDetectionResult
 from utils.blob_storage_helper import get_blob_loader
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,7 +32,7 @@ class TextDetectionApp:
     def __init__(
         self,
         models_dir: Optional[str] = None,
-        voting_method: str = "weighted",
+        voting_method: Literal["majority", "weighted", "unanimous"] = "weighted",
         use_blob_storage: bool = True
     ):
         """
@@ -93,7 +93,7 @@ class TextDetectionApp:
         
         logger.info("Text detection app initialized successfully")
     
-    def detect_text(self, text: str) -> Dict[str, Any]:
+    def detect_text(self, text: str) -> TextDetectionResult:
         """
         Detect if text is AI-generated or human-written
         
@@ -101,67 +101,17 @@ class TextDetectionApp:
             text: Input text to analyze
             
         Returns:
-            Dictionary with detection results
+            TextDetectionResult with detection results
         """
         if not text or not text.strip():
-            return {
-                "error": "Empty text provided",
-                "text": text,
-                "prediction": None,
-                "metrics": None
-            }
+            raise ValueError("Empty text provided")
         
-        try:
-            # Run detection
-            logger.info(f"Analyzing text (length: {len(text)} characters)...")
-            result: EnsembleResult = self.ensemble.detect(text)
-            
-            # Format output
-            output = {
-                "text": result.text,
-                "prediction": result.prediction,
-                "confidence": round(result.confidence, 4),
-                "metrics": {
-                    "average_bot_score": round(result.average_bot_score, 4),
-                    "average_human_score": round(result.average_human_score, 4),
-                    "voting_method": result.voting_method,
-                    "voting_breakdown": result.voting_breakdown
-                },
-                "individual_model_results": [
-                    {
-                        "model": score.model_name,
-                        "prediction": score.prediction,
-                        "confidence": round(score.confidence, 4),
-                        "bot_score": round(score.bot_score, 4),
-                        "human_score": round(score.human_score, 4)
-                    }
-                    for score in result.individual_scores
-                ]
-            }
-            
-            logger.info(f"Detection complete: {result.prediction} (confidence: {result.confidence:.4f})")
-            return output
+        # Run detection
+        logger.info(f"Analyzing text (length: {len(text)} characters)...")
+        result: TextDetectionResult = self.ensemble.detect(text)
         
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error during detection: {error_msg}")
-            
-            # Provide helpful instructions for common errors
-            help_msg = None
-            if "All detectors failed" in error_msg or "No trained model" in error_msg:
-                help_msg = (
-                    "Models need to be trained before use. "
-                    "Train models using: python train_text_detectors.py --dataset <path_to_training_data.csv> "
-                    "Your dataset should have 'text' and 'label' columns (0=human, 1=bot/AI-generated)."
-                )
-            
-            return {
-                "error": error_msg,
-                "help": help_msg,
-                "text": text,
-                "prediction": None,
-                "metrics": None
-            }
+        logger.info(f"Detection complete: {result.prediction} (confidence: {result.confidence:.4f})")
+        return result
     
     def detect_text_json(self, text: str, indent: int = 2) -> str:
         """
@@ -175,7 +125,7 @@ class TextDetectionApp:
             JSON string with detection results
         """
         result = self.detect_text(text)
-        return json.dumps(result, indent=indent)
+        return result.to_json(indent=indent)
 
 
 def main():
@@ -242,7 +192,22 @@ def main():
         sys.exit(1)
     
     # Run detection
-    result_json = app.detect_text_json(input_text, indent=args.indent)
+    try:
+        result_json = app.detect_text_json(input_text, indent=args.indent)
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error during detection: {e}")
+        
+        # Provide helpful instructions for common errors
+        if "All detectors failed" in str(e) or "No trained model" in str(e):
+            logger.info(
+                "Models need to be trained before use. "
+                "Train models using: python train_text_detectors.py --dataset <path_to_training_data.csv> "
+                "Your dataset should have 'text' and 'label' columns (0=human, 1=bot/AI-generated)."
+            )
+        sys.exit(1)
     
     # Output results
     if args.output:
@@ -251,11 +216,6 @@ def main():
             f.write(result_json)
     else:
         print(result_json)
-    
-    # Parse result to determine exit code
-    result = json.loads(result_json)
-    if "error" in result and result["error"]:
-        sys.exit(1)
     
     sys.exit(0)
 

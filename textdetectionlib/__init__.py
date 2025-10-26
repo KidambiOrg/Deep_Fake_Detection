@@ -13,6 +13,9 @@ from .model_registry import (
     get_text_models_by_architecture
 )
 
+# Import output models for convenience
+from outputModel.text_detection_output_model import TextDetectionResult, IndividualModelScore
+
 __all__ = [
     'DetectorBertML',
     'BertMLResult',
@@ -23,6 +26,8 @@ __all__ = [
     'DetectorDistilBertML',
     'DistilBertMLResult',
     'TextDetectionEnsemble',
+    'TextDetectionResult',
+    'IndividualModelScore',
     'TEXT_MODEL_REGISTRY',
     'list_available_text_models',
     'get_text_model_info',
