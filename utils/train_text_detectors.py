@@ -304,8 +304,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="Models/text_detection",
-        help="Directory to save trained models (default: Models/text_detection)"
+        default="textmodels",
+        help="Directory to save trained models (default: textmodels)"
     )
     parser.add_argument(
         "--models",

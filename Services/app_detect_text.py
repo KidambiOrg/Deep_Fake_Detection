@@ -43,32 +43,33 @@ class TextDetectionApp:
             voting_method: Voting strategy for ensemble ("majority", "weighted", "unanimous")
             use_blob_storage: Whether to download models from Azure Blob Storage
         """
-        self.models_dir = models_dir or "Models/text_detection"
+        self.models_dir = models_dir or "textmodels"
         self.voting_method = voting_method
+        self.use_blob_storage = use_blob_storage
         
-        # Download models from blob storage if configured
-        if use_blob_storage:
-            self._download_models_from_blob()
-        
-        # Configure detector paths
+        # Configure detector paths with load_from_blob option
         bert_config = {
-            "model_path": f"{self.models_dir}/bert_ml_classifier.pkl",
-            "pretrained_weights": "bert-base-cased"
+            "model_path": f"{self.models_dir}/bert_ml_classifier.pkl" if not use_blob_storage else None,
+            "pretrained_weights": "bert-base-cased",
+            "load_from_blob": use_blob_storage
         }
         
         bow_config = {
-            "model_path": f"{self.models_dir}/bow_ml_classifier.pkl",
-            "vectorizer_path": f"{self.models_dir}/bow_ml_vectorizer.pkl"
+            "model_path": f"{self.models_dir}/bow_ml_classifier.pkl" if not use_blob_storage else None,
+            "vectorizer_path": f"{self.models_dir}/bow_ml_vectorizer.pkl" if not use_blob_storage else None,
+            "load_from_blob": use_blob_storage
         }
         
         charcnn_config = {
-            "model_path": f"{self.models_dir}/charcnn_model.h5",
-            "tokenizer_path": f"{self.models_dir}/charcnn_tokenizer.pkl"
+            "model_path": f"{self.models_dir}/charcnn_model.h5" if not use_blob_storage else None,
+            "tokenizer_path": f"{self.models_dir}/charcnn_tokenizer.pkl" if not use_blob_storage else None,
+            "load_from_blob": use_blob_storage
         }
         
         distilbert_config = {
-            "model_path": f"{self.models_dir}/distilbert_ml_classifier.pkl",
-            "pretrained_weights": "distilbert-base-cased"
+            "model_path": f"{self.models_dir}/distilbert_ml_classifier.pkl" if not use_blob_storage else None,
+            "pretrained_weights": "distilbert-base-cased",
+            "load_from_blob": use_blob_storage
         }
         
         # Model weights for weighted voting (based on expected performance)
@@ -91,40 +92,6 @@ class TextDetectionApp:
         )
         
         logger.info("Text detection app initialized successfully")
-    
-    def _download_models_from_blob(self):
-        """Download text detection models from Azure Blob Storage"""
-        blob_loader = get_blob_loader()
-        if not blob_loader or not blob_loader.blob_service_client:
-            logger.info("Blob storage not configured, using local models")
-            return
-        
-        logger.info("Downloading text detection models from blob storage...")
-        
-        # Define blob paths for text models
-        text_models = [
-            ('models', 'text_detection/bert_ml_classifier.pkl'),
-            ('models', 'text_detection/bow_ml_classifier.pkl'),
-            ('models', 'text_detection/bow_ml_vectorizer.pkl'),
-            ('models', 'text_detection/charcnn_model.h5'),
-            ('models', 'text_detection/charcnn_tokenizer.pkl'),
-            ('models', 'text_detection/distilbert_ml_classifier.pkl')
-        ]
-        
-        # Create models directory if it doesn't exist
-        os.makedirs(self.models_dir, exist_ok=True)
-        
-        # Download each model
-        for container, blob_path in text_models:
-            local_path = blob_loader.download_model(container, blob_path)
-            if local_path:
-                # Copy to expected location
-                filename = Path(blob_path).name
-                dest_path = Path(self.models_dir) / filename
-                
-                if not dest_path.exists():
-                    shutil.copy(local_path, dest_path)
-                    logger.info(f"Copied {filename} to {dest_path}")
     
     def detect_text(self, text: str) -> Dict[str, Any]:
         """

@@ -43,12 +43,74 @@ class DetectorBowML:
     Labels: {"human": 0, "bot": 1}
     """
     
+    def _load_from_blob_storage(self):
+        """Download classifier and vectorizer from Azure Blob Storage"""
+        try:
+            import sys
+            from pathlib import Path
+            
+            # Add parent directory to path to import utils
+            current_dir = Path(__file__).parent
+            parent_dir = current_dir.parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            
+            from utils.blob_storage_helper import get_blob_loader
+            from textdetectionlib.model_registry import get_text_model_info
+            
+            logger.info("Loading BoW ML classifier and vectorizer from blob storage...")
+            
+            # Get model info from registry
+            model_info = get_text_model_info('bow_ml')
+            if not model_info:
+                logger.warning("BoW ML not found in text model registry")
+                return
+            
+            model_files = model_info.get('model_files', {})
+            
+            # Get blob loader
+            blob_loader = get_blob_loader()
+            
+            paths = {}
+            
+            # Download classifier file
+            if 'classifier' in model_files:
+                classifier_config = model_files['classifier']
+                blob_config = classifier_config.get('blob_storage')
+                if blob_config:
+                    container = blob_config['container']
+                    blob_name = blob_config['blob']
+                    classifier_local = blob_loader.download_model(container, blob_name)
+                    if classifier_local:
+                        paths['classifier'] = classifier_local
+                        logger.info(f"Downloaded BoW ML classifier to: {classifier_local}")
+            
+            # Download vectorizer file
+            if 'vectorizer' in model_files:
+                vectorizer_config = model_files['vectorizer']
+                blob_config = vectorizer_config.get('blob_storage')
+                if blob_config:
+                    container = blob_config['container']
+                    blob_name = blob_config['blob']
+                    vectorizer_local = blob_loader.download_model(container, blob_name)
+                    if vectorizer_local:
+                        paths['vectorizer'] = vectorizer_local
+                        logger.info(f"Downloaded BoW ML vectorizer to: {vectorizer_local}")
+            
+            return paths
+                    
+        except Exception as e:
+            logger.error(f"Failed to load BoW ML models from blob storage: {e}")
+        
+        return None
+    
     def __init__(
         self,
         model_path: Optional[str] = None,
         vectorizer_path: Optional[str] = None,
         max_features: int = 10000,
-        ngram_range: tuple = (1, 2)
+        ngram_range: tuple = (1, 2),
+        load_from_blob: bool = False
     ):
         """
         Initialize BoW ML detector
@@ -58,6 +120,7 @@ class DetectorBowML:
             vectorizer_path: Path to trained TF-IDF vectorizer
             max_features: Maximum number of features for TF-IDF
             ngram_range: N-gram range for TF-IDF (default unigrams and bigrams)
+            load_from_blob: If True, download models from Azure Blob Storage
         """
         if not DEPENDENCIES_AVAILABLE:
             raise ImportError(
@@ -81,13 +144,22 @@ class DetectorBowML:
         self.label_dict = {"human": 0, "bot": 1}
         self.label_dict_reverse = {0: "human", 1: "bot"}
         
+        # Download from blob storage if requested
+        if load_from_blob:
+            downloaded_paths = self._load_from_blob_storage()
+            if downloaded_paths:
+                if 'classifier' in downloaded_paths:
+                    self.model_path = downloaded_paths['classifier']
+                if 'vectorizer' in downloaded_paths:
+                    self.vectorizer_path = downloaded_paths['vectorizer']
+        
         # Initialize tokenizer
         self.tweet_tokenizer = TweetTokenizer()
         
         # Initialize TF-IDF vectorizer
         self.vectorizer: Optional[TfidfVectorizer] = None
-        if vectorizer_path and os.path.exists(vectorizer_path):
-            self.load_vectorizer(vectorizer_path)
+        if self.vectorizer_path and os.path.exists(self.vectorizer_path):
+            self.load_vectorizer(self.vectorizer_path)
         else:
             logger.info(f"Initializing new TF-IDF vectorizer (max_features={max_features})")
             self.vectorizer = TfidfVectorizer(
@@ -100,8 +172,8 @@ class DetectorBowML:
         
         # Initialize classifier
         self.classifier: Optional[LogisticRegression] = None
-        if model_path and os.path.exists(model_path):
-            self.load_model(model_path)
+        if self.model_path and os.path.exists(self.model_path):
+            self.load_model(self.model_path)
         else:
             logger.warning("No trained model loaded. Train a model before prediction.")
     

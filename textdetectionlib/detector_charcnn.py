@@ -113,6 +113,67 @@ class DetectorCharCNN:
     Architecture: Embedding → Conv1D(3,4,5) → GlobalMaxPooling → Dropout → Dense
     """
     
+    def _load_from_blob_storage(self):
+        """Download models from Azure Blob Storage"""
+        try:
+            import sys
+            from pathlib import Path
+            
+            # Add parent directory to path to import utils
+            current_dir = Path(__file__).parent
+            parent_dir = current_dir.parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            
+            from utils.blob_storage_helper import get_blob_loader
+            from textdetectionlib.model_registry import get_text_model_info
+            
+            logger.info("Loading CharCNN models from blob storage...")
+            
+            # Get model info from registry
+            model_info = get_text_model_info('charcnn')
+            if not model_info:
+                logger.warning("CharCNN not found in text model registry")
+                return
+            
+            model_files = model_info.get('model_files', {})
+            
+            # Get blob loader
+            blob_loader = get_blob_loader()
+            
+            paths = {}
+            
+            # Download model file
+            if 'model' in model_files:
+                model_config = model_files['model']
+                blob_config = model_config.get('blob_storage')
+                if blob_config:
+                    container = blob_config['container']
+                    blob_name = blob_config['blob']
+                    model_local = blob_loader.download_model(container, blob_name)
+                    if model_local:
+                        paths['model'] = model_local
+                        logger.info(f"Downloaded CharCNN model to: {model_local}")
+            
+            # Download tokenizer file
+            if 'tokenizer' in model_files:
+                tokenizer_config = model_files['tokenizer']
+                blob_config = tokenizer_config.get('blob_storage')
+                if blob_config:
+                    container = blob_config['container']
+                    blob_name = blob_config['blob']
+                    tokenizer_local = blob_loader.download_model(container, blob_name)
+                    if tokenizer_local:
+                        paths['tokenizer'] = tokenizer_local
+                        logger.info(f"Downloaded CharCNN tokenizer to: {tokenizer_local}")
+            
+            return paths
+                    
+        except Exception as e:
+            logger.error(f"Failed to load CharCNN models from blob storage: {e}")
+        
+        return None
+    
     def __init__(
         self,
         model_path: Optional[str] = None,
@@ -121,7 +182,8 @@ class DetectorCharCNN:
         emb_size: int = 32,
         input_size: int = 320,
         num_filters: int = 128,
-        dropout: float = 0.2
+        dropout: float = 0.2,
+        load_from_blob: bool = False
     ):
         """
         Initialize CharCNN detector
@@ -134,6 +196,7 @@ class DetectorCharCNN:
             input_size: Maximum sequence length
             num_filters: Number of filters for each Conv1D layer
             dropout: Dropout rate
+            load_from_blob: If True, download models from Azure Blob Storage
         """
         # Lazy import TensorFlow only when detector is instantiated
         if not _lazy_import_tensorflow():
@@ -157,18 +220,27 @@ class DetectorCharCNN:
         self.label_dict = {"human": 0, "bot": 1}
         self.label_dict_reverse = {0: "human", 1: "bot"}
         
+        # Download from blob storage if requested
+        if load_from_blob:
+            downloaded_paths = self._load_from_blob_storage()
+            if downloaded_paths:
+                if 'model' in downloaded_paths:
+                    self.model_path = downloaded_paths['model']
+                if 'tokenizer' in downloaded_paths:
+                    self.tokenizer_path = downloaded_paths['tokenizer']
+        
         # Initialize tokenizer
         self.tokenizer: Optional[Tokenizer] = None
-        if tokenizer_path and os.path.exists(tokenizer_path):
-            self.load_tokenizer(tokenizer_path)
+        if self.tokenizer_path and os.path.exists(self.tokenizer_path):
+            self.load_tokenizer(self.tokenizer_path)
         else:
             logger.info("Initializing new character-level tokenizer")
             self.tokenizer = Tokenizer(num_words=None, char_level=True, oov_token='UNK')
         
         # Initialize model
         self.model: Optional[Model] = None
-        if model_path and os.path.exists(model_path):
-            self.load_model(model_path)
+        if self.model_path and os.path.exists(self.model_path):
+            self.load_model(self.model_path)
         else:
             if vocab_size is not None:
                 self.model = self.build_model()

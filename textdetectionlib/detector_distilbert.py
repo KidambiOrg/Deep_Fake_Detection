@@ -42,11 +42,58 @@ class DetectorDistilBertML:
     Labels: {"human": 0, "bot": 1}
     """
     
+    def _load_from_blob_storage(self):
+        """Download classifier from Azure Blob Storage"""
+        try:
+            import sys
+            from pathlib import Path
+            
+            # Add parent directory to path to import utils
+            current_dir = Path(__file__).parent
+            parent_dir = current_dir.parent
+            if str(parent_dir) not in sys.path:
+                sys.path.insert(0, str(parent_dir))
+            
+            from utils.blob_storage_helper import get_blob_loader
+            from textdetectionlib.model_registry import get_text_model_info
+            
+            logger.info("Loading DistilBERT ML classifier from blob storage...")
+            
+            # Get model info from registry
+            model_info = get_text_model_info('distilbert_ml')
+            if not model_info:
+                logger.warning("DistilBERT ML not found in text model registry")
+                return
+            
+            model_files = model_info.get('model_files', {})
+            
+            # Get blob loader
+            blob_loader = get_blob_loader()
+            
+            # Download classifier file
+            if 'classifier' in model_files:
+                classifier_config = model_files['classifier']
+                blob_config = classifier_config.get('blob_storage')
+                if blob_config:
+                    container = blob_config['container']
+                    blob_name = blob_config['blob']
+                    classifier_local = blob_loader.download_model(container, blob_name)
+                    if classifier_local:
+                        self.model_path = classifier_local
+                        logger.info(f"Downloaded DistilBERT ML classifier to: {classifier_local}")
+                        return classifier_local  # Return path to be loaded later
+                    
+        except Exception as e:
+            logger.error(f"Failed to load DistilBERT ML classifier from blob storage: {e}")
+        
+        return None
+    
     def __init__(
         self,
         model_path: Optional[str] = None,
         pretrained_weights: str = "distilbert-base-cased",
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        load_from_blob: bool = False
     ):
         """
         Initialize DistilBERT ML detector
@@ -55,6 +102,7 @@ class DetectorDistilBertML:
             model_path: Path to trained sklearn model (LogisticRegression)
             pretrained_weights: DistilBERT pretrained model name
             device: Device to run on ('cuda' or 'cpu')
+            load_from_blob: If True, download classifier from Azure Blob Storage
         """
         if not DEPENDENCIES_AVAILABLE:
             raise ImportError(
@@ -69,6 +117,12 @@ class DetectorDistilBertML:
         # Label mappings (human=0, bot=1)
         self.label_dict = {"human": 0, "bot": 1}
         self.label_dict_reverse = {0: "human", 1: "bot"}
+        
+        # Download from blob storage if requested
+        if load_from_blob:
+            downloaded_path = self._load_from_blob_storage()
+            if downloaded_path:
+                self.model_path = downloaded_path
         
         # Initialize DistilBERT components
         logger.info(f"Loading DistilBERT model: {pretrained_weights}")
@@ -87,8 +141,8 @@ class DetectorDistilBertML:
         
         # Initialize classifier
         self.classifier: Optional[LogisticRegression] = None
-        if model_path and os.path.exists(model_path):
-            self.load_model(model_path)
+        if self.model_path and os.path.exists(self.model_path):
+            self.load_model(self.model_path)
         else:
             logger.warning("No trained model loaded. Train a model before prediction.")
     
