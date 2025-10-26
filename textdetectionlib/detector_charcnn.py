@@ -10,17 +10,84 @@ import pickle
 import os
 import logging
 
-try:
-    from tensorflow import keras
-    from keras.preprocessing.text import Tokenizer
-    from keras.preprocessing.sequence import pad_sequences
-    from keras.layers import Input, Embedding, Conv1D, GlobalMaxPooling1D, Dropout, Dense, concatenate
-    from keras.models import Model
-    DEPENDENCIES_AVAILABLE = True
-except ImportError:
-    DEPENDENCIES_AVAILABLE = False
-    Model = Any  # type: ignore
-    Tokenizer = Any  # type: ignore
+# Global flags for lazy imports
+DEPENDENCIES_AVAILABLE = None
+_tf_initialized = False
+_import_error = None
+
+# Type hints for lazy-loaded modules
+Model = Any
+Tokenizer = Any
+pad_sequences = Any
+tf = Any
+keras = Any
+Input = Any
+Embedding = Any
+Conv1D = Any
+GlobalMaxPooling1D = Any
+Dropout = Any
+Dense = Any
+concatenate = Any
+
+def _lazy_import_tensorflow():
+    """Lazy import TensorFlow only when needed (speeds up initial module import)"""
+    global DEPENDENCIES_AVAILABLE, _tf_initialized, _import_error
+    global tf, keras, Tokenizer, pad_sequences, Model
+    global Input, Embedding, Conv1D, GlobalMaxPooling1D, Dropout, Dense, concatenate
+    
+    if _tf_initialized:
+        return DEPENDENCIES_AVAILABLE
+    
+    # Suppress TensorFlow oneDNN custom operations info message
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+    # Suppress other TensorFlow info/warning messages
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+    
+    try:
+        import tensorflow as _tf
+        from tensorflow import keras as _keras
+        
+        # For Keras 3.x compatibility
+        try:
+            from keras.src.legacy.preprocessing.text import Tokenizer as _Tokenizer
+            from keras.src.legacy.preprocessing.sequence import pad_sequences as _pad_sequences
+        except ImportError:
+            # Fallback for older Keras versions
+            try:
+                from keras.preprocessing.text import Tokenizer as _Tokenizer
+                from keras.preprocessing.sequence import pad_sequences as _pad_sequences
+            except ImportError:
+                from tensorflow.keras.preprocessing.text import Tokenizer as _Tokenizer
+                from tensorflow.keras.preprocessing.sequence import pad_sequences as _pad_sequences
+        
+        from keras.layers import Input as _Input, Embedding as _Embedding
+        from keras.layers import Conv1D as _Conv1D, GlobalMaxPooling1D as _GlobalMaxPooling1D
+        from keras.layers import Dropout as _Dropout, Dense as _Dense, concatenate as _concatenate
+        from keras.models import Model as _Model
+        
+        # Assign to global scope
+        tf = _tf
+        keras = _keras
+        Tokenizer = _Tokenizer
+        pad_sequences = _pad_sequences
+        Model = _Model
+        Input = _Input
+        Embedding = _Embedding
+        Conv1D = _Conv1D
+        GlobalMaxPooling1D = _GlobalMaxPooling1D
+        Dropout = _Dropout
+        Dense = _Dense
+        concatenate = _concatenate
+        
+        DEPENDENCIES_AVAILABLE = True
+        _tf_initialized = True
+        return True
+        
+    except ImportError as e:
+        DEPENDENCIES_AVAILABLE = False
+        _import_error = str(e)
+        _tf_initialized = True
+        return False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,11 +135,15 @@ class DetectorCharCNN:
             num_filters: Number of filters for each Conv1D layer
             dropout: Dropout rate
         """
-        if not DEPENDENCIES_AVAILABLE:
-            raise ImportError(
+        # Lazy import TensorFlow only when detector is instantiated
+        if not _lazy_import_tensorflow():
+            error_msg = (
                 "Required dependencies not available. "
                 "Please install: pip install tensorflow keras"
             )
+            if _import_error:
+                error_msg += f"\nImport error: {_import_error}"
+            raise ImportError(error_msg)
         
         self.model_path = model_path
         self.tokenizer_path = tokenizer_path

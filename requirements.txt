@@ -3,8 +3,8 @@ transformers>=4.20.0
 numpy>=1.19.0
 torchaudio>=0.9.0
 sentencepiece>=0.1.96
-protobuf>=5.28.0
-Pillow>=8.0.0
+protobuf==4.25.5
+Pillow>=7.1.0,<12.0.0
 torchvision>=0.10.0
 scipy>=1.7.0
 opencv-python>=4.5.0
@@ -19,8 +19,11 @@ azure-functions>=1.18.0
 azure-storage-blob>=12.19.0
 azure-identity>=1.15.0
 azurefunctions.extensions.bindings.blob
+debugpy>=1.8.0
 tensorflow>=2.10.0
+tensorflow-datasets>=4.9.0
 keras>=2.10.0
 scikit-learn>=1.0.0
 nltk>=3.6.0
 python-dotenv>=1.0.0
+streamlit>=1.50.0

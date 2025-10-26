@@ -540,8 +540,11 @@ class SEResNet50Detector:
                     logits = self.model(tensor)
                     avg_probs = F.softmax(logits, dim=1).cpu().numpy()[0]
                 
-                real_prob = float(avg_probs[0])
-                fake_prob = float(avg_probs[1])
+                # Model outputs: [fake_prob, real_prob] based on training
+                # avg_probs[0] = probability of FAKE class
+                # avg_probs[1] = probability of REAL class
+                fake_prob = float(avg_probs[0])
+                real_prob = float(avg_probs[1])
                 
                 # For binary classification with complementary probabilities,
                 # predict based on which probability is higher

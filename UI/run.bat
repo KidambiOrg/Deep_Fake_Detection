@@ -26,6 +26,9 @@ if not exist .streamlit\secrets.toml (
 
 REM Start Streamlit
 echo Starting Streamlit app...
+@echo off
+echo Starting Streamlit Deepfake Detection App...
+echo.
 streamlit run app.py
 
 pause

@@ -35,11 +35,16 @@ from pathlib import Path
 import logging
 
 try:
-    from c2pa import Reader
+    from c2pa import Reader as C2PAReader
     C2PA_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    C2PAReader = None  # type: ignore
     C2PA_AVAILABLE = False
-    logging.warning("c2pa-python package not installed. C2PA functionality will be disabled.")
+    logging.warning(f"c2pa-python package import failed: {str(e)}. C2PA functionality will be disabled.")
+except Exception as e:
+    C2PAReader = None  # type: ignore
+    C2PA_AVAILABLE = False
+    logging.warning(f"c2pa-python package failed to load: {str(e)}. C2PA functionality will be disabled.")
 
 
 class C2paExtractor:
@@ -99,7 +104,7 @@ class C2paExtractor:
             
             # Open the file and create a Reader
             with open(image_path, 'rb') as file:
-                with Reader(mime_type, file) as reader:
+                with C2PAReader(mime_type, file) as reader:  # type: ignore
                     # Get the full manifest as JSON (complete Reader structure)
                     manifest_json = reader.json()
                     manifest_data = json.loads(manifest_json)
