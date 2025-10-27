@@ -4,7 +4,7 @@ Header component with PreLoad and Settings buttons
 
 import streamlit as st
 import time
-from components.api_utils import call_warmup_endpoint
+from components.api_utils import call_warmup_endpoint, call_warmup_text_endpoint
 
 @st.dialog("Settings", width="small")
 def show_settings_dialog():
@@ -48,7 +48,12 @@ def render_header(page_title: str):
             if st.button("PreLoad", type="secondary", 
                         key=f"preload_{page_title}", disabled=st.session_state.is_analyzing):
                 with st.spinner("Loading models... This may take 2-5 minutes for first time."):
-                    result = call_warmup_endpoint()
+                    # Call different warmup endpoints based on the page
+                    if page_title == "Analyze Text":
+                        result = call_warmup_text_endpoint()
+                    else:
+                        result = call_warmup_endpoint()
+                    
                     st.session_state.preload_status = result
                     
                     if result.get('status') == 'ready':

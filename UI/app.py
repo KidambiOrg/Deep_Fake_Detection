@@ -45,6 +45,12 @@ if 'uploaded_filename' not in st.session_state:
 if 'file_uploader_key' not in st.session_state:
     st.session_state.file_uploader_key = 0
 
+if 'text_data' not in st.session_state:
+    st.session_state.text_data = None
+
+if 'text_analysis_result' not in st.session_state:
+    st.session_state.text_analysis_result = None
+
 # Define pages
 analyze_image_page = st.Page(
     "pages/analyze_image.py",

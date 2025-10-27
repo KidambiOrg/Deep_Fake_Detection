@@ -13,8 +13,10 @@ def get_endpoints():
     """Get API endpoints based on base URL"""
     base_url = st.session_state.azure_function_url
     return {
-        'warmup': f"{base_url}/warmup",
-        'analyze': f"{base_url}/analyzeImage"
+        'warmup': f"{base_url}/warmupImageModels",
+        'warmupText': f"{base_url}/warmupTextModels",
+        'analyze': f"{base_url}/analyzeImage",
+        'analyzeText': f"{base_url}/analyzeText"
     }
 
 def is_valid_url(url):
@@ -82,6 +84,25 @@ def call_warmup_endpoint():
             'message': str(e)
         }
 
+def call_warmup_text_endpoint():
+    """Call the warmup endpoint to preload text models"""
+    try:
+        endpoints = get_endpoints()
+        response = requests.get(endpoints['warmupText'], timeout=300)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {
+                'status': 'error',
+                'message': f"Failed with status code: {response.status_code}"
+            }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
+
 def analyze_image(image_bytes, filename=None):
     """Call the analyze endpoint with image
     
@@ -98,6 +119,31 @@ def analyze_image(image_bytes, filename=None):
         response = requests.post(
             endpoints['analyze'],
             files=files,
+            timeout=120
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Analysis failed with status code: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Analysis request failed: {str(e)}")
+        return None
+
+def analyze_text(text):
+    """Call the analyze text endpoint
+    
+    Args:
+        text: Text content to analyze
+    """
+    try:
+        endpoints = get_endpoints()
+        
+        response = requests.post(
+            endpoints['analyzeText'],
+            json={'text': text},
+            headers={'Content-Type': 'application/json'},
             timeout=120
         )
         
