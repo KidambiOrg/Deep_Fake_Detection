@@ -81,8 +81,8 @@ def analyzeImage(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Received image file: {image_file.filename}, size: {len(image_data)} bytes")
         
-        # Call the process_image function
-        result_json = process_image(image_data)
+        # Call the process_image function with filename
+        result_json = process_image(image_data, filename=image_file.filename)
         
         return func.HttpResponse(
             result_json,

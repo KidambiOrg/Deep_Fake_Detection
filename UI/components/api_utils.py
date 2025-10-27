@@ -7,6 +7,7 @@ import requests
 from PIL import Image
 import io
 from urllib.parse import urlparse
+import os
 
 def get_endpoints():
     """Get API endpoints based on base URL"""
@@ -25,15 +26,22 @@ def is_valid_url(url):
         return False
 
 def load_image_from_url(url):
-    """Load image from URL"""
+    """Load image from URL and return tuple of (image, filename)"""
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         image = Image.open(io.BytesIO(response.content))
-        return image
+        
+        # Extract filename from URL
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename:
+            filename = 'image.png'
+        
+        return image, filename
     except Exception as e:
         st.error(f"Failed to load image from URL: {str(e)}")
-        return None
+        return None, None
 
 def load_image_from_upload(uploaded_file):
     """Load image from uploaded file"""
@@ -74,11 +82,18 @@ def call_warmup_endpoint():
             'message': str(e)
         }
 
-def analyze_image(image_bytes):
-    """Call the analyze endpoint with image"""
+def analyze_image(image_bytes, filename=None):
+    """Call the analyze endpoint with image
+    
+    Args:
+        image_bytes: Image data as bytes
+        filename: Original filename (optional, defaults to 'image.png')
+    """
     try:
         endpoints = get_endpoints()
-        files = {'image': ('image.png', image_bytes, 'image/png')}
+        # Use provided filename or default to 'image.png'
+        file_name = filename if filename else 'image.png'
+        files = {'image': (file_name, image_bytes, 'image/png')}
         
         response = requests.post(
             endpoints['analyze'],

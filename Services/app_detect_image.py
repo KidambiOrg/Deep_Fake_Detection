@@ -152,11 +152,12 @@ def get_ensemble_detector(debug=False, timeout=300):
             _ensemble_loading = False
 
 
-def process_image(image_bytes):
+def process_image(image_bytes, filename=None):
     """Process an image from bytes and return detection results
     
     Args:
         image_bytes: Image data as bytes
+        filename: Original filename of the uploaded image (optional)
         
     Returns:
         DetectionOutput Pydantic model with detection results as JSON string
@@ -186,6 +187,10 @@ def process_image(image_bytes):
             voting_method = 'weighted'
             
             result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
+            
+            # Update imageFile with actual uploaded filename
+            if filename:
+                result.imageFile = filename
             
             # Extract EXIF data
             try:

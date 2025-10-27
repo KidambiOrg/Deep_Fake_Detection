@@ -112,10 +112,11 @@ else:  # Image URL
     # Auto-load image when URL is entered
     if url_input and is_valid_url(url_input):
         if st.session_state.image_source != "url" or st.session_state.image_data is None:
-            image = load_image_from_url(url_input)
+            image, filename = load_image_from_url(url_input)
             if image:
                 st.session_state.image_data = image
                 st.session_state.image_source = "url"
+                st.session_state.uploaded_filename = filename  # Store filename from URL
     
     # Show action buttons when image is loaded
     if st.session_state.image_data is not None:
@@ -126,6 +127,7 @@ else:  # Image URL
                 st.session_state.image_data = None
                 st.session_state.image_source = None
                 st.session_state.analysis_result = None
+                st.session_state.uploaded_filename = ""  # Clear filename too
                 st.rerun()
             
             # Analyze button
@@ -164,8 +166,11 @@ if st.session_state.image_data is not None:
             # Convert image to bytes
             image_bytes = image_to_bytes(st.session_state.image_data)
             
-            # Call analysis endpoint
-            result = analyze_image(image_bytes)
+            # Get filename from session state if available (for uploads)
+            filename = st.session_state.get('uploaded_filename', None)
+            
+            # Call analysis endpoint with filename
+            result = analyze_image(image_bytes, filename=filename)
             
             if result:
                 st.session_state.analysis_result = result
