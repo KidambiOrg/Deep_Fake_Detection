@@ -8,13 +8,7 @@ __pycache__/
 
 # Deep Fake models director
 Models/ 
-textmodels/bert_ml_classifier.pkl
-textmodels/bow_ml_classifier.pkl
-textmodels/bow_ml_vectorizer.pkl
-textmodels/charcnn_model.h5
-textmodels/charcnn_tokenizer.pkl
-textmodels/distilbert_ml_classifier.pkl
-
+TextModels/
 Data/LLM.csv
 Tests/comprehensive_voting_analysis.py
 Tests/enhanced_models.py
