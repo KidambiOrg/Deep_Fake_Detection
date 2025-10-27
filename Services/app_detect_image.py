@@ -6,7 +6,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from imagedetectionlib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector, EnsembleResult
+from imagedetectionlib.detect_deepfake_image import DeepfakeImageDetector, EnsembleDetector
 from imagedetectionlib.model_registry import list_available_models
 from outputModel.image_detection_output_model import (
     DetectionOutput,
@@ -26,6 +26,7 @@ import time
 import logging
 from io import BytesIO
 from PIL import Image
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -180,32 +181,52 @@ def process_image(image_bytes):
             image.save(temp_path)
         
         try:
-        
             # Process the image
             threshold = 0.20
             voting_method = 'weighted'
-        
             
             result = ensemble.detect(temp_path, threshold=threshold, voting_method=voting_method)
             
-            # Create result data
-            data = {
-                'image': 'uploaded_image.png',
-                'image_path': temp_path,
-                'ground_truth': 'UNKNOWN',
-                'prediction': 'FAKE' if result.is_deepfake else 'REAL',
-                'is_correct': False,
-                'confidence': result.confidence,
-                'voting_summary': result.voting_summary,
-                'avg_fake_score': result.average_fake_score,
-                'avg_real_score': result.average_real_score,
-                'individual_results': result.individual_results,
-                'has_c2pa': False,
-                'c2pa_info': {}
-            }
+            # Extract EXIF data
+            try:
+                exif_dict = ExifExtractor.extract_exif(temp_path)
+                result.exifData = ExifData(**exif_dict)
+            except Exception as e:
+                logger.warning(f"EXIF extraction failed: {e}")
+                result.exifData = ExifData(hasExif=False, additionalData={'error': str(e)})
             
-            # Convert to Pydantic model
-            output_model = convert_to_pydantic_model([data], voting_method=voting_method)
+            # Extract C2PA data
+            try:
+                c2pa_extractor = C2paExtractor()
+                c2pa_raw = c2pa_extractor.extract_c2pa_data(temp_path)
+                
+                # Create C2paManifestSummary if active manifest exists
+                manifest_summary = None
+                active_manifest_label = c2pa_raw.get('activeManifest')
+                if active_manifest_label and isinstance(active_manifest_label, str):
+                    manifests_dict = c2pa_raw.get('manifests', {})
+                    if active_manifest_label in manifests_dict:
+                        manifest_summary = C2paManifestSummary(**manifests_dict[active_manifest_label])
+                
+                # Create C2paData model
+                result.c2paData = C2paData(
+                    hasC2pa=c2pa_raw.get('hasC2pa', False),
+                    validationState=c2pa_raw.get('validationState'),
+                    activeManifest=manifest_summary,
+                    manifests=c2pa_raw.get('manifests'),
+                    validationResults=c2pa_raw.get('validationResults'),
+                    validationStatus=c2pa_raw.get('validationStatus'),
+                    isEmbedded=c2pa_raw.get('isEmbedded'),
+                    remoteUrl=c2pa_raw.get('remoteUrl'),
+                    error=c2pa_raw.get('error')
+                )
+            except Exception as e:
+                logger.warning(f"C2PA extraction failed: {e}")
+                result.c2paData = C2paData(hasC2pa=False, error=f"C2PA extraction failed: {str(e)}")
+            
+            # result is now an ImageDetectionResult Pydantic model with EXIF and C2PA data
+            # Wrap in DetectionOutput with markdown report
+            output_model = create_detection_output([result])
             return output_model.to_json()
             
         finally:
@@ -307,7 +328,7 @@ def list_voting_methods():
 
 
 def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weighted'):
-    """Process a single image and return result data
+    """Process a single image and return ImageDetectionResult
     
     Args:
         image_path: Path to the image file
@@ -316,199 +337,136 @@ def process_image_data(image_path, ensemble, threshold=0.26, voting_method='weig
         voting_method: Voting method for ensemble
         
     Returns:
-        Dictionary containing detection results or None if error
+        ImageDetectionResult Pydantic model with detection results
     """
     try:
         result = ensemble.detect(image_path, threshold=threshold, voting_method=voting_method)
         
-        # Determine ground truth from filename
-        image_file = os.path.basename(image_path)
-        ground_truth_is_fake = 'fake' in image_file.lower()
-        is_correct = result.is_deepfake == ground_truth_is_fake
+        # Add EXIF data if not already present
+        if result.exifData is None and os.path.exists(image_path):
+            try:
+                exif_dict = ExifExtractor.extract_exif(image_path)
+                result.exifData = ExifData(**exif_dict)
+            except Exception:
+                result.exifData = ExifData(hasExif=False)
         
-        # Extract C2PA data for markdown report
-        has_c2pa = False
-        c2pa_info = {}
-        try:
-            c2pa_extractor = C2paExtractor()
-            if c2pa_extractor.available:
-                c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
-                has_c2pa = c2pa_raw.get('hasC2pa', False)
-                c2pa_info = c2pa_raw
-        except Exception:
-            pass  # C2PA extraction is optional, don't fail the whole process
+        # Add C2PA data if not already present
+        if result.c2paData is None and os.path.exists(image_path):
+            try:
+                c2pa_extractor = C2paExtractor()
+                if c2pa_extractor.available:
+                    c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
+                    
+                    # Create C2paManifestSummary if active manifest exists
+                    manifest_summary = None
+                    active_manifest_label = c2pa_raw.get('activeManifest')
+                    if active_manifest_label and isinstance(active_manifest_label, str):
+                        manifests_dict = c2pa_raw.get('manifests', {})
+                        if active_manifest_label in manifests_dict:
+                            manifest_summary = C2paManifestSummary(**manifests_dict[active_manifest_label])
+                    
+                    result.c2paData = C2paData(
+                        hasC2pa=c2pa_raw.get('hasC2pa', False),
+                        validationState=c2pa_raw.get('validationState'),
+                        activeManifest=manifest_summary,
+                        manifests=c2pa_raw.get('manifests'),
+                        validationResults=c2pa_raw.get('validationResults'),
+                        validationStatus=c2pa_raw.get('validationStatus'),
+                        isEmbedded=c2pa_raw.get('isEmbedded'),
+                        remoteUrl=c2pa_raw.get('remoteUrl'),
+                        error=c2pa_raw.get('error')
+                    )
+            except Exception as e:
+                result.c2paData = C2paData(hasC2pa=False, error=f"C2PA extraction failed: {str(e)}")
         
-        return {
-            'image': image_file,
-            'image_path': image_path,  # Store full path for EXIF and C2PA extraction
-            'ground_truth': 'FAKE' if ground_truth_is_fake else 'REAL',
-            'prediction': 'FAKE' if result.is_deepfake else 'REAL',
-            'is_correct': is_correct,
-            'confidence': result.confidence,
-            'voting_summary': result.voting_summary,
-            'avg_fake_score': result.average_fake_score,
-            'avg_real_score': result.average_real_score,
-            'individual_results': result.individual_results,
-            'has_c2pa': has_c2pa,
-            'c2pa_info': c2pa_info
-        }
+        return result
+        
     except Exception as e:
         image_file = os.path.basename(image_path)
-        print(f"Error processing image '{image_file}': {e}")
-        return {
-            'image': image_file,
-            'image_path': image_path,  # Store full path for EXIF and C2PA extraction
-            'ground_truth': 'UNKNOWN',
-            'prediction': 'ERROR',
-            'is_correct': False,
-            'confidence': 0.0,
-            'voting_summary': str(e),
-            'avg_fake_score': 0.0,
-            'avg_real_score': 0.0,
-            'individual_results': [],
-            'has_c2pa': False,
-            'c2pa_info': {}
-        }
+        logger.error(f"Error processing image '{image_file}': {e}")
+        # Return a minimal result on error
+        return ImageDetectionResult(
+            imageFile=image_file,
+            prediction='ERROR',
+            confidence=0.0,
+            averageFake=0.0,
+            averageReal=0.0,
+            votingMethod=voting_method,
+            voting=VotingResult(fake=0, real=0, total=0),
+            individualModelResults=[]
+        )
 
 
-def convert_to_pydantic_model(results_data, voting_method='weighted'):
-    """Convert results data to Pydantic model
+def create_detection_output(image_results: List[ImageDetectionResult]) -> DetectionOutput:
+    """Wrap ImageDetectionResult list in DetectionOutput
     
     Args:
-        results_data: List of result dictionaries
-        voting_method: Voting method used
+        image_results: List of ImageDetectionResult instances
         
     Returns:
         DetectionOutput Pydantic model
     """
-    image_results = []
-    
-    for data in results_data:
-        # Process individual model results
-        individual_models = []
-        for individual in data.get('individual_results', []):
-            # Extract fake and real scores from the model's scores dictionary
-            fake_score = 0.0
-            real_score = 0.0
-            
-            # Check for various fake label formats
-            for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
-                            'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
-                            'generated', 'Generated', 'synthetic', 'Synthetic', 
-                            'AI', 'ai', 'LABEL_1', '1']:
-                if fake_key in individual.scores:
-                    fake_score = individual.scores[fake_key]
-                    break
-            
-            # Check for various real label formats
-            for real_key in ['human', 'Human', 'HUMAN',
-                            'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
-                            'genuine', 'Genuine', 'LABEL_0', '0']:
-                if real_key in individual.scores:
-                    real_score = individual.scores[real_key]
-                    break
-            
-            # If still no scores found, try to infer from available scores
-            if fake_score == 0.0 and real_score == 0.0 and individual.scores:
-                scores_list = list(individual.scores.values())
-                if len(scores_list) >= 2:
-                    real_score = scores_list[0]
-                    fake_score = scores_list[1]
-            
-            individual_models.append(IndividualModelResult(
-                model=individual.model_name,
-                prediction='FAKE' if individual.is_deepfake else 'REAL',
-                confidence=individual.confidence,
-                fakeScore=fake_score,
-                realScore=real_score
-            ))
-        
-        # Extract voting information
-        voting_summary = data.get('voting_summary', {})
-        if isinstance(voting_summary, dict):
-            voting = VotingResult(
-                fake=voting_summary.get('fake', 0),
-                real=voting_summary.get('real', 0),
-                total=voting_summary.get('total', len(individual_models))
-            )
-        else:
-            # If voting_summary is not a dict, create default voting
-            voting = VotingResult(
-                fake=0,
-                real=0,
-                total=len(individual_models)
-            )
-        
-        # Extract EXIF data
-        exif_data = None
-        image_path = data.get('image_path')
-        if image_path and os.path.exists(image_path):
-            try:
-                exif_dict = ExifExtractor.extract_exif(image_path)
-                exif_data = ExifData(**exif_dict)
-            except Exception as e:
-                # If EXIF extraction fails, use default
-                exif_data = ExifData(hasExif=False, additionalData={'error': str(e)})
-        
-        # Extract C2PA data
-        c2pa_data = None
-        if image_path and os.path.exists(image_path):
-            try:
-                c2pa_extractor = C2paExtractor()
-                c2pa_raw = c2pa_extractor.extract_c2pa_data(image_path)
-                
-                # Create C2paManifestSummary if active manifest exists
-                # Note: activeManifest is now a String (label), not an object
-                # The actual manifest data is in manifests[activeManifest]
-                manifest_summary = None
-                active_manifest_label = c2pa_raw.get('activeManifest')
-                if active_manifest_label and isinstance(active_manifest_label, str):
-                    manifests_dict = c2pa_raw.get('manifests', {})
-                    if active_manifest_label in manifests_dict:
-                        manifest_summary = C2paManifestSummary(**manifests_dict[active_manifest_label])
-                
-                # Create C2paData model
-                c2pa_data = C2paData(
-                    hasC2pa=c2pa_raw.get('hasC2pa', False),
-                    validationState=c2pa_raw.get('validationState'),
-                    activeManifest=manifest_summary,
-                    manifests=c2pa_raw.get('manifests'),
-                    validationResults=c2pa_raw.get('validationResults'),
-                    validationStatus=c2pa_raw.get('validationStatus'),
-                    isEmbedded=c2pa_raw.get('isEmbedded'),
-                    remoteUrl=c2pa_raw.get('remoteUrl'),
-                    error=c2pa_raw.get('error')
-                )
-            except Exception as e:
-                # If C2PA extraction fails, create default with error
-                c2pa_data = C2paData(hasC2pa=False, error=f"C2PA extraction failed: {str(e)}")
-        
-        # Create image result
-        image_result = ImageDetectionResult(
-            imageFile=data.get('image', ''),
-            prediction=data.get('prediction', 'UNKNOWN'),
-            confidence=data.get('confidence', 0.0),
-            averageFake=data.get('avg_fake_score', 0.0),
-            averageReal=data.get('avg_real_score', 0.0),
-            votingMethod=voting_method,
-            voting=voting,
-            exifData=exif_data,
-            c2paData=c2pa_data,
-            individualModelResults=individual_models
-        )
-        image_results.append(image_result)
-    
     # Generate markdown content
-    markdown_content = generate_markdown_report(results_data, voting_method)
+    markdown_content = generate_markdown_report_from_pydantic(image_results)
     
     # Create final output
     output = DetectionOutput(
         markdown=markdown_content,
-        totalImages=len(results_data),
+        totalImages=len(image_results),
         images=image_results
     )
     
     return output
+
+
+def generate_markdown_report_from_pydantic(image_results: List[ImageDetectionResult]) -> str:
+    """Generate markdown formatted report from Pydantic models
+    
+    Args:
+        image_results: List of ImageDetectionResult instances
+        
+    Returns:
+        Markdown formatted string
+    """
+    if not image_results:
+        return ""
+    
+    lines = []
+    
+    # Header
+    lines.append("# Deepfake Detection Results")
+    lines.append("")
+    
+    # Settings
+  
+    
+    # Results for each image
+    for idx, result in enumerate(image_results, 1):
+        lines.append(f"## Image {idx}: {result.imageFile} - `{result.prediction}`")
+        lines.append("")       
+        lines.append(f"**Confidence**: `{result.confidence:.2%}`")
+        lines.append(f"**Average Fake Score**: `{result.averageFake:.4f}`")
+        lines.append(f"**Average Real Score**: `{result.averageReal:.4f}`")
+        lines.append("")
+        
+        lines.append("### Detection Settings")
+        lines.append("")
+        if image_results:
+            lines.append(f"**Voting Method**: `{image_results[0].votingMethod}`")
+        lines.append(f"**Total Images Processed**: `{len(image_results)}`")
+        lines.append("")
+        
+        # Voting breakdown
+        lines.append("### Voting Results")
+        lines.append("")
+        lines.append(f"- **Fake votes**: {result.voting.fake}")
+        lines.append(f"- **Real votes**: {result.voting.real}")
+        lines.append(f"- **Total models**: {result.voting.total}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    
+    return "\n".join(lines)
 
 
 def generate_markdown_report(results_data, voting_method='weighted', threshold=0.26):
@@ -722,17 +680,17 @@ def process_path_with_ensemble(path, ensemble, threshold=0.26, voting_method='we
             for image_file in os.listdir(path):
                 image_path = os.path.join(path, image_file)
                 if os.path.isfile(image_path):
-                    # Process each image
-                    data = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
-                    if data:
-                        results_data.append(data)
+                    # Process each image - returns ImageDetectionResult
+                    result = process_image_data(image_path, ensemble, threshold=threshold, voting_method=voting_method)
+                    if result:
+                        results_data.append(result)
         else:
             print(json.dumps({"error": f"Path '{path}' does not exist or is not accessible."}))
             return
         
-        # Convert to Pydantic model and output JSON
+        # Wrap results in DetectionOutput and output JSON
         if results_data:
-            output_model = convert_to_pydantic_model(results_data, voting_method=voting_method)
+            output_model = create_detection_output(results_data)
             print(output_model.to_json())
         else:
             print(json.dumps({"error": "No images processed", "totalImages": 0, "images": []}))

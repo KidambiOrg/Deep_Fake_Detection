@@ -35,6 +35,9 @@ from pathlib import Path
 import cv2
 from scipy import ndimage
 
+# Import Pydantic output models
+from outputModel.image_detection_output_model import ImageDetectionResult, IndividualModelResult, VotingResult
+
 # Try to import timm, but don't fail if not available
 try:
     import timm
@@ -132,17 +135,6 @@ class DeepfakeDetectionResult:
                        f"  - Manual review\n" \
                        f"  - Using ensemble voting with multiple models\n" \
                        f"  - Adjusting threshold"
-
-
-@dataclass
-class EnsembleResult:
-    """Result from ensemble voting of multiple models"""
-    is_deepfake: bool
-    confidence: float
-    individual_results: List[DeepfakeDetectionResult]
-    voting_summary: Dict[str, int]
-    average_fake_score: float
-    average_real_score: float
 
 
 class DeepfakeImageDetector:
@@ -1207,7 +1199,7 @@ class EnsembleDetector:
     def detect(self, 
                image_input: Union[str, Image.Image, np.ndarray, BinaryIO, bytes],
                threshold: float = 0.5,
-               voting_method: str = 'majority') -> EnsembleResult:
+               voting_method: str = 'majority') -> ImageDetectionResult:
         """
         Detect deepfake using ensemble of models
         
@@ -1223,7 +1215,7 @@ class EnsembleDetector:
                 - 'confidence_weighted': Weight by individual model confidence
             
         Returns:
-            EnsembleResult with combined prediction
+            ImageDetectionResult with combined prediction
         """
         # Get predictions from all models using the user-provided threshold
         individual_results = []
@@ -1538,13 +1530,68 @@ class EnsembleDetector:
         else:
             raise ValueError(f"Unknown voting method: {voting_method}")
         
-        return EnsembleResult(
-            is_deepfake=bool(is_deepfake),
+        # Determine image filename
+        if isinstance(image_input, str):
+            image_file = os.path.basename(image_input)
+        else:
+            image_file = "uploaded_image"
+        
+        # Convert individual results to IndividualModelResult Pydantic models
+        individual_model_results = []
+        for result in individual_results:
+            # Extract fake and real scores
+            fake_score = 0.0
+            real_score = 0.0
+            
+            # Check for various fake label formats
+            for fake_key in ['artificial', 'Artificial', 'ARTIFICIAL',
+                            'Fake', 'fake', 'FAKE', 'deepfake', 'Deepfake', 'DEEPFAKE', 
+                            'generated', 'Generated', 'synthetic', 'Synthetic', 
+                            'AI', 'ai', 'LABEL_1', '1']:
+                if fake_key in result.scores:
+                    fake_score = result.scores[fake_key]
+                    break
+            
+            # Check for various real label formats
+            for real_key in ['human', 'Human', 'HUMAN',
+                            'Real', 'real', 'REAL', 'authentic', 'Authentic', 'AUTHENTIC',
+                            'genuine', 'Genuine', 'LABEL_0', '0']:
+                if real_key in result.scores:
+                    real_score = result.scores[real_key]
+                    break
+            
+            # If still no scores found, try to infer from available scores
+            if fake_score == 0.0 and real_score == 0.0 and result.scores:
+                scores_list = list(result.scores.values())
+                if len(scores_list) >= 2:
+                    real_score = scores_list[0]
+                    fake_score = scores_list[1]
+            
+            individual_model_results.append(IndividualModelResult(
+                model=result.model_name or "Unknown",
+                prediction='FAKE' if result.is_deepfake else 'REAL',
+                confidence=result.confidence,
+                fakeScore=fake_score,
+                realScore=real_score
+            ))
+        
+        # Create VotingResult
+        voting_result = VotingResult(
+            fake=voting_summary.get('fake', 0),
+            real=voting_summary.get('real', 0),
+            total=voting_summary.get('total', len(individual_results))
+        )
+        
+        # Create and return ImageDetectionResult
+        return ImageDetectionResult(
+            imageFile=image_file,
+            prediction='FAKE' if is_deepfake else 'REAL',
             confidence=float(confidence),
-            individual_results=individual_results,
-            voting_summary=voting_summary,
-            average_fake_score=avg_fake_score,
-            average_real_score=avg_real_score
+            averageFake=avg_fake_score,
+            averageReal=avg_real_score,
+            votingMethod=voting_method,
+            voting=voting_result,
+            individualModelResults=individual_model_results
         )
     
     def compare_models(self, 
@@ -1586,7 +1633,7 @@ class EnsembleDetector:
                          directory_path: str,
                          extensions: List[str] = ['.jpg', '.jpeg', '.png', '.bmp', '.gif','avif','webp'],
                          threshold: float = 0.5,
-                         voting_method: str = 'majority') -> List[EnsembleResult]:
+                         voting_method: str = 'majority') -> List[ImageDetectionResult]:
         """
         Analyze all images in a directory using ensemble
         
@@ -1597,7 +1644,7 @@ class EnsembleDetector:
             voting_method: Voting method to use
             
         Returns:
-            List of EnsembleResult objects
+            List of ImageDetectionResult objects
         """
         directory = Path(directory_path)
         
