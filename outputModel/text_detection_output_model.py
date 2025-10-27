@@ -2,7 +2,15 @@
 Pydantic models for text detection output
 """
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Dict, Optional
+
+
+class TextMetadata(BaseModel):
+    """Metadata about the analyzed text"""
+    wordCount: int = Field(description="Number of words in the text")
+    totalSize: int = Field(description="Total size of text in characters")
+    characterCount: int = Field(default=0, description="Total character count including spaces")
+    sentenceCount: int = Field(default=0, description="Number of sentences in the text")
 
 
 class IndividualModelScore(BaseModel):
@@ -16,12 +24,17 @@ class IndividualModelScore(BaseModel):
 
 class TextDetectionResult(BaseModel):
     """Ensemble prediction result for text detection"""
+    markdown: str = Field(default="", description="Markdown formatted results")
     text: str = Field(description="Input text that was analyzed")
     prediction: str = Field(description="Final prediction (AI-generated or human-generated)")
     confidence: float = Field(description="Confidence score (0.0 to 1.0)")
     average_bot_score: float = Field(description="Average bot/AI-generated score across all models")
     average_human_score: float = Field(description="Average human-written score across all models")
     voting_method: str = Field(description="Voting method used (majority, weighted, or unanimous)")
+    metadata: Optional[TextMetadata] = Field(
+        default=None,
+        description="Metadata about the analyzed text"
+    )
     individual_scores: List[IndividualModelScore] = Field(
         default_factory=list,
         description="Individual results from each model"

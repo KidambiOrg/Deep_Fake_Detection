@@ -17,8 +17,10 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from textdetectionlib.text_detection_ensemble import TextDetectionEnsemble
-from outputModel.text_detection_output_model import TextDetectionResult
+from outputModel.text_detection_output_model import TextDetectionResult, TextMetadata
 from utils.blob_storage_helper import get_blob_loader
+from utils.text_analysis_helper import add_metadata_and_markdown
+import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -101,7 +103,7 @@ class TextDetectionApp:
             text: Input text to analyze
             
         Returns:
-            TextDetectionResult with detection results
+            TextDetectionResult with detection results, metadata, and markdown
         """
         if not text or not text.strip():
             raise ValueError("Empty text provided")
@@ -109,6 +111,9 @@ class TextDetectionApp:
         # Run detection
         logger.info(f"Analyzing text (length: {len(text)} characters)...")
         result: TextDetectionResult = self.ensemble.detect(text)
+        
+        # Add metadata and generate markdown
+        result = add_metadata_and_markdown(result)
         
         logger.info(f"Detection complete: {result.prediction} (confidence: {result.confidence:.4f})")
         return result
