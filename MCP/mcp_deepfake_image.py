@@ -42,13 +42,13 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
     @app.generic_trigger(
         arg_name="context",
         type="mcpToolTrigger",
-        toolName="get_deepfake_models",
-        description="Get a list of available deepfake detection models with filtering options.",
+        toolName="get_image_detection_models",
+        description="Get a list of available image deepfake detection models with filtering options.",
         toolProperties="[]",
     )
-    def get_deepfake_models_mcp(context) -> str:
+    def get_image_detection_models_mcp(context) -> str:
         """
-        MCP tool endpoint to retrieve available deepfake detection models.
+        MCP tool endpoint to retrieve available image deepfake detection models.
         Supports filtering by source and architecture.
         
         Args:
@@ -57,7 +57,7 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
         Returns:
             str: JSON string with the list of available models or filtered results.
         """
-        logging.info('MCP tool get_deepfake_models called.')
+        logging.info('MCP tool get_image_detection_models called.')
         
         try:
             # Import model registry functions
@@ -96,10 +96,10 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
             return json.dumps(result, indent=2)
             
         except Exception as e:
-            logging.error(f"Error in MCP get_deepfake_models: {str(e)}")
+            logging.error(f"Error in MCP get_image_detection_models: {str(e)}")
             error_result = {
                 "error": str(e),
-                "message": "Failed to retrieve deepfake detection models"
+                "message": "Failed to retrieve image deepfake detection models"
             }
             return json.dumps(error_result)
     
@@ -107,14 +107,14 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
     @app.generic_trigger(
         arg_name="context",
         type="mcpToolTrigger",
-        toolName="check_models_status",
-        description="Check if the deepfake detection models are loaded and ready for analysis.",
+        toolName="check_image_models_status",
+        description="Check if the image deepfake detection models are loaded and ready for analysis.",
         toolProperties="[]",
     )
-    def check_models_status_mcp(context) -> str:
+    def check_image_models_status_mcp(context) -> str:
         """
-        MCP tool endpoint to check if models are loaded and ready.
-        Useful to call before analyze_deepfake_image to avoid timeouts.
+        MCP tool endpoint to check if image models are loaded and ready.
+        Useful to call before analyze_image_deepfake to avoid timeouts.
         
         Args:
             context: The MCP tool trigger context (not used).
@@ -122,7 +122,7 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
         Returns:
             str: JSON string with model status information.
         """
-        logging.info('MCP tool check_models_status called.')
+        logging.info('MCP tool check_image_models_status called.')
         
         try:
             from Services.app_detect_image import get_ensemble_detector
@@ -133,7 +133,7 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
                 if ensemble is not None:
                     return json.dumps({
                         "status": "ready",
-                        "message": "Models are loaded and ready for image analysis",
+                        "message": "Image models are loaded and ready for image analysis",
                         "ready": True
                     })
             except:
@@ -141,16 +141,16 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
             
             return json.dumps({
                 "status": "loading",
-                "message": "Models are still loading. First-time initialization takes 2-5 minutes.",
+                "message": "Image models are still loading. First-time initialization takes 2-5 minutes.",
                 "ready": False,
-                "tip": "Call the warmup endpoint (/v1.0/warmup) or wait a few minutes before analyzing images."
+                "tip": "Call the warmup endpoint (/v1.0/warmupImageModels) or wait a few minutes before analyzing images."
             })
             
         except Exception as e:
-            logging.error(f"Error checking model status: {str(e)}")
+            logging.error(f"Error checking image model status: {str(e)}")
             return json.dumps({
                 "status": "error",
-                "message": f"Error checking model status: {str(e)}",
+                "message": f"Error checking image model status: {str(e)}",
                 "ready": False
             })
     
@@ -158,11 +158,11 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
     @app.generic_trigger(
         arg_name="context",
         type="mcpToolTrigger",
-        toolName="analyze_deepfake_image",
+        toolName="analyze_image_deepfake",
         description="Analyze an image to detect if it's a deepfake or AI-generated. Accepts image URL, local file path, or base64-encoded data.",
         toolProperties=tool_properties_analyze_image_json,
     )
-    def analyze_deepfake_image_mcp(context) -> str:
+    def analyze_image_deepfake_mcp(context) -> str:
         """
         MCP tool endpoint to analyze an image for deepfake detection.
         Accepts URL, local file path, or base64-encoded image data.
@@ -177,7 +177,7 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
         Returns:
             str: JSON string with detection results including prediction, confidence, and individual model results.
         """
-        logging.info('MCP tool analyze_deepfake_image called.')
+        logging.info('MCP tool analyze_image_deepfake called.')
         
         try:
             import requests
@@ -303,13 +303,13 @@ def register_mcp_image_endpoints(app: func.FunctionApp):
                 "image_source": image_source,
                 "threshold": threshold,
                 "voting_method": voting_method,
-                "analysis_timestamp": "2025-10-23"
+                "analysis_timestamp": "2025-10-27"
             }
             
             return json.dumps(result, indent=2)
             
         except Exception as e:
-            logging.error(f"Error in MCP analyze_deepfake_image: {str(e)}")
+            logging.error(f"Error in MCP analyze_image_deepfake: {str(e)}")
             error_result = {
                 "error": str(e),
                 "message": "Failed to analyze image for deepfake detection"
