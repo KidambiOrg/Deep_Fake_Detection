@@ -112,26 +112,24 @@ def register_mcp_text_endpoints(app: func.FunctionApp):
         logging.info('MCP tool check_text_models_status called.')
         
         try:
-            from Services.app_detect_text import TextDetectionApp
+            from Services.app_detect_text import get_text_ensemble
             
-            # Try to initialize the app to check if models can be loaded
-            try:
-                app = TextDetectionApp(use_blob_storage=True)
-                if app.ensemble is not None:
-                    return json.dumps({
-                        "status": "ready",
-                        "message": "Text detection models are loaded and ready for analysis",
-                        "ready": True
-                    })
-            except:
-                pass
+            # Try to get the ensemble to check if models are loaded
+            ensemble = get_text_ensemble()
             
-            return json.dumps({
-                "status": "loading",
-                "message": "Text models are still loading. First-time initialization takes 1-3 minutes.",
-                "ready": False,
-                "tip": "Call the warmup endpoint (/v1.0/warmupTextModels) or wait a few minutes before analyzing text."
-            })
+            if ensemble is not None:
+                return json.dumps({
+                    "status": "ready",
+                    "message": "Text detection models are loaded and ready for analysis",
+                    "ready": True
+                })
+            else:
+                return json.dumps({
+                    "status": "loading",
+                    "message": "Text models are still loading. First-time initialization takes 1-3 minutes.",
+                    "ready": False,
+                    "tip": "Call the warmup endpoint (/v1.0/warmupTextModels) or wait a few minutes before analyzing text."
+                })
             
         except Exception as e:
             logging.error(f"Error checking text model status: {str(e)}")
@@ -196,21 +194,10 @@ def register_mcp_text_endpoints(app: func.FunctionApp):
             logging.info(f"Analyzing text (length: {len(text)} chars) with voting method: {voting_method}")
             
             # Lazy import to avoid loading models at startup
-            from Services.app_detect_text import TextDetectionApp
+            from Services.app_detect_text import detect_text_json
             
-            # Initialize the text detection app
-            try:
-                app = TextDetectionApp(voting_method=voting_method, use_blob_storage=True)
-            except Exception as e:
-                logging.error(f"Failed to initialize text detection app: {str(e)}")
-                return json.dumps({
-                    "status": "error",
-                    "message": f"Failed to initialize text detection models: {str(e)}",
-                    "tip": "Models may need to be trained first. Check the logs for details."
-                })
-            
-            # Analyze the text
-            result_json = app.detect_text_json(text, indent=2)
+            # Analyze the text using module-level function
+            result_json = detect_text_json(text, voting_method=voting_method, indent=2)
             
             # Parse and enhance the result
             result = json.loads(result_json)

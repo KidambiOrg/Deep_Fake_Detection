@@ -172,12 +172,12 @@ def warmup_text_models(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Warmup endpoint for text models called - loading models.')
     
     try:
-        from Services.app_detect_text import TextDetectionApp
+        from Services.app_detect_text import get_text_ensemble
         
-        # Try to initialize the text detection app
-        app_instance = TextDetectionApp(use_blob_storage=True)
+        # Try to load the text ensemble
+        ensemble = get_text_ensemble(debug=True, timeout=600)
         
-        if app_instance.ensemble is not None:
+        if ensemble is not None:
             return func.HttpResponse(
                 json.dumps({
                     "status": "ready",
@@ -217,7 +217,7 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # Lazy import to avoid loading models at startup
-        from Services.app_detect_text import TextDetectionApp
+        from Services.app_detect_text import detect_text_json
         
         # Get request body
         try:
@@ -232,11 +232,9 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        # Extract text only
+        # Extract text and voting method
         text = req_body.get('text')
-        
-        # Use default voting method
-        voting_method = 'weighted'
+        voting_method = req_body.get('voting_method', 'weighted')
         
         if not text:
             return func.HttpResponse(
@@ -260,11 +258,8 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Analyzing text (length: {len(text)} chars) with voting method: {voting_method}")
         
-        # Initialize the text detection app
-        app_instance = TextDetectionApp(voting_method=voting_method, use_blob_storage=True)
-        
-        # Analyze the text
-        result_json = app_instance.detect_text_json(text, indent=2)
+        # Analyze the text using module-level function
+        result_json = detect_text_json(text, voting_method=voting_method, indent=2)
         
         return func.HttpResponse(
             result_json,

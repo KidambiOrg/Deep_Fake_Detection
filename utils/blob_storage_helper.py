@@ -65,35 +65,49 @@ class BlobStorageModelLoader:
                 # Use DefaultAzureCredential with explicit logging
                 logger.info(f"Attempting to connect to storage account: {self.storage_account_name}")
                 
-                # For local development, prioritize Azure CLI and exclude IMDS (cloud-only)
-                credential = DefaultAzureCredential(
-                    exclude_managed_identity_credential=True,  # Exclude IMDS for local dev
-                    exclude_shared_token_cache_credential=False,
-                    exclude_visual_studio_code_credential=False,
-                    exclude_azure_cli_credential=False,  # Use Azure CLI (az login)
-                    exclude_interactive_browser_credential=False,
-                    exclude_environment_credential=False
-                )
+                # Check if running in Azure (Container Apps, App Service, etc.)
+                is_azure_environment = os.environ.get("WEBSITE_INSTANCE_ID") or os.environ.get("CONTAINER_APP_NAME")
+                
+                if is_azure_environment:
+                    # Running in Azure - use Managed Identity (IMDS)
+                    logger.info("Detected Azure environment - using Managed Identity")
+                    credential = DefaultAzureCredential(
+                        exclude_managed_identity_credential=False,  # Enable Managed Identity for Azure
+                        exclude_shared_token_cache_credential=True,
+                        exclude_visual_studio_code_credential=True,
+                        exclude_azure_cli_credential=True,
+                        exclude_interactive_browser_credential=True,
+                        exclude_environment_credential=False
+                    )
+                else:
+                    # Local development - prioritize Azure CLI
+                    logger.info("Detected local environment - using Azure CLI credential")
+                    credential = DefaultAzureCredential(
+                        exclude_managed_identity_credential=True,  # Exclude IMDS for local dev
+                        exclude_shared_token_cache_credential=False,
+                        exclude_visual_studio_code_credential=False,
+                        exclude_azure_cli_credential=False,  # Use Azure CLI (az login)
+                        exclude_interactive_browser_credential=False,
+                        exclude_environment_credential=False
+                    )
+                
                 account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
+                
+                # Enable Azure SDK logging for authentication debugging
+                import sys
+                azure_logger = logging.getLogger('azure.core.pipeline.policies.http_logging_policy')
+                azure_logger.setLevel(logging.INFO)
+                azure_logger.addHandler(logging.StreamHandler(sys.stdout))
+                
                 self.blob_service_client = BlobServiceClient(
                     account_url=account_url,
-                    credential=credential
+                    credential=credential,
+                    logging_enable=True
                 )
                 
-                # Test the connection by listing containers
-                try:
-                    # This will verify authentication works
-                    _ = list(self.blob_service_client.list_containers(results_per_page=1))
-                    logger.info(f"Azure Blob Storage client initialized with Managed Identity: {self.storage_account_name}")
-                except Exception as test_error:
-                    logger.error(f"Managed Identity authentication failed during connection test: {test_error}")
-                    logger.info("This could be due to:")
-                    logger.info("  1. Missing RBAC permissions (need 'Storage Blob Data Reader' or 'Storage Blob Data Contributor')")
-                    logger.info("  2. Not logged in via 'az login' for local development")
-                    logger.info("  3. Wrong Azure subscription selected")
-                    logger.info("  4. Network/firewall restrictions on storage account")
-                    logger.info("Falling back to connection string authentication...")
-                    self.blob_service_client = None
+                logger.info(f"Azure Blob Storage client initialized with Managed Identity: {self.storage_account_name}")
+                logger.info(f"Storage account URL: {account_url}")
+                logger.info("Authentication will be verified when downloading models")
                     
             except Exception as e:
                 logger.warning(f"Failed to initialize with Managed Identity: {e}")
