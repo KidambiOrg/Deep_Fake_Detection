@@ -27,6 +27,7 @@ import logging
 from io import BytesIO
 from PIL import Image
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -38,50 +39,133 @@ _ensemble_lock = threading.Lock()
 def download_models_from_blob_storage():
     """Download models from Azure Blob Storage if configured.
     Updates the MODEL_REGISTRY with local paths to downloaded models.
+    Note: Models are cached locally, so subsequent calls will use cached versions.
+    Only initializes blob client if models need to be downloaded.
     """
-    blob_loader = get_blob_loader()
-    if not blob_loader or not blob_loader.blob_service_client:
-        logger.info("Blob storage not configured, using local models")
-        return
-    
-    logger.info("Checking for models in Azure Blob Storage...")
-    
-    # Download models that have blob_storage configuration
     from imagedetectionlib.model_registry import MODEL_REGISTRY
+    import tempfile
+    from pathlib import Path
+    import hashlib
+    
+    # First, check if all models are already cached locally
+    # This avoids initializing the blob client unnecessarily
+    cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
+    
+    models_to_download = []
+    
     for model_key, model_info in MODEL_REGISTRY.items():
         if 'blob_storage' not in model_info:
             continue
             
         blob_config = model_info['blob_storage']
         
-        # Determine if it's a single file or directory
+        # Check if model is already cached
         if 'blob' in blob_config:
-            # Single file (e.g., .pth, .safetensors)
-            local_path = blob_loader.download_model(
-                container_name=blob_config['container'],
-                blob_name=blob_config['blob']
-            )
+            # Single file
+            blob_path = f"{blob_config['container']}/{blob_config['blob']}"
+            path_hash = hashlib.md5(blob_path.encode()).hexdigest()
+            filename = Path(blob_config['blob']).name
+            cache_path = cache_dir / f"{path_hash}_{filename}"
             
-            if local_path and 'model_path' in model_info:
-                model_info['model_path'] = local_path
-                logger.info(f"Updated {model_key} model path to: {local_path}")
+            if cache_path.exists():
+                # Model is cached, update registry without downloading
+                if 'model_path' in model_info:
+                    model_info['model_path'] = str(cache_path)
+                    logger.info(f"Using cached model for {model_key}: {cache_path}")
+            else:
+                models_to_download.append((model_key, model_info, blob_config, 'file'))
         
         elif 'path' in blob_config:
-            # Directory (e.g., HuggingFace model with multiple files)
-            local_dir = blob_loader.download_directory(
-                container_name=blob_config['container'],
-                blob_prefix=blob_config['path']
-            )
+            # Directory
+            local_dir = cache_dir / blob_config['container'] / blob_config['path']
             
-            if local_dir:
-                # Update model path to use downloaded directory
-                if 'local_path' in model_info:
-                    model_info['local_path'] = str(local_dir)
-                    logger.info(f"Updated {model_key} model directory to: {local_dir}")
+            if local_dir.exists() and any(local_dir.iterdir()):
+                # Directory is cached and not empty, update registry
+                # Use 'name' field instead of 'local_path' for HuggingFace models
+                if model_info.get('source') == 'huggingface':
+                    # For HuggingFace models, update the name to point to local path
+                    model_info['name'] = str(local_dir)
                 else:
-                    # For HuggingFace models, update the name to point to local directory
                     model_info['local_path'] = str(local_dir)
-                    logger.info(f"Set {model_key} local path to: {local_dir}")
+                logger.info(f"Using cached model directory for {model_key}: {local_dir}")
+            else:
+                models_to_download.append((model_key, model_info, blob_config, 'directory'))
+    
+    # If no models need downloading, we're done - no need to initialize blob client
+    if not models_to_download:
+        logger.info("All models are already cached locally, no blob storage access needed")
+        return
+    
+    # Only now initialize blob client since we need to download something
+    logger.info(f"Need to download {len(models_to_download)} model(s) from blob storage...")
+    blob_loader = get_blob_loader()
+    
+    if not blob_loader or not blob_loader.blob_service_client:
+        logger.warning("Blob storage not configured but models need downloading")
+        return
+    
+    # Download models in parallel using ThreadPoolExecutor
+    def download_model_task(task_data):
+        """Helper function to download a single model"""
+        model_key, model_info, blob_config, model_type = task_data
+        
+        try:
+            if model_type == 'file':
+                # Single file (e.g., .pth, .safetensors)
+                local_path = blob_loader.download_model(
+                    container_name=blob_config['container'],
+                    blob_name=blob_config['blob']
+                )
+                
+                if local_path and 'model_path' in model_info:
+                    model_info['model_path'] = local_path
+                    logger.info(f"Downloaded {model_key} model to: {local_path}")
+                    return (model_key, 'success', local_path)
+                else:
+                    logger.warning(f"Failed to download {model_key}")
+                    return (model_key, 'failed', None)
+            
+            elif model_type == 'directory':
+                # Directory (e.g., HuggingFace model with multiple files)
+                local_dir = blob_loader.download_directory(
+                    container_name=blob_config['container'],
+                    blob_prefix=blob_config['path']
+                )
+                
+                if local_dir:
+                    # Update model path to use downloaded directory
+                    # Use 'name' field instead of 'local_path' for HuggingFace models
+                    if model_info.get('source') == 'huggingface':
+                        # For HuggingFace models, update the name to point to local path
+                        model_info['name'] = str(local_dir)
+                    else:
+                        model_info['local_path'] = str(local_dir)
+                    logger.info(f"Downloaded {model_key} model directory to: {local_dir}")
+                    return (model_key, 'success', local_dir)
+                else:
+                    logger.warning(f"Failed to download {model_key} directory")
+                    return (model_key, 'failed', None)
+        except Exception as e:
+            logger.error(f"Error downloading {model_key}: {e}")
+            return (model_key, 'error', str(e))
+    
+    # Execute downloads in parallel with max 4 concurrent downloads
+    download_results = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(download_model_task, task): task[0] for task in models_to_download}
+        
+        for future in as_completed(futures):
+            model_key = futures[future]
+            try:
+                result = future.result()
+                download_results.append(result)
+            except Exception as e:
+                logger.error(f"Exception during parallel download of {model_key}: {e}")
+                download_results.append((model_key, 'exception', str(e)))
+    
+    # Log summary
+    success_count = sum(1 for r in download_results if r[1] == 'success')
+    logger.info(f"Parallel download complete: {success_count}/{len(models_to_download)} models downloaded successfully")
 
 
 def get_ensemble_detector(debug=False, timeout=300):
