@@ -518,8 +518,12 @@ class DeepfakeImageDetector:
                 # Find the fake/deepfake score directly
                 fake_score = 0.0
                 fake_label = None
+                real_score = 0.0
+                real_label = None
                 deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic', 'ai']
+                real_indicators = ['real', 'authentic', 'genuine', 'human', 'realism']
                 
+                # Find fake score
                 for label, score in scores.items():
                     label_lower = label.lower()
                     for indicator in deepfake_indicators:
@@ -530,12 +534,29 @@ class DeepfakeImageDetector:
                     if fake_label:
                         break
                 
-                # If we found a fake label, use its score directly
-                if fake_label:
+                # Find real score
+                for label, score in scores.items():
+                    label_lower = label.lower()
+                    for indicator in real_indicators:
+                        if indicator in label_lower:
+                            real_score = score
+                            real_label = label
+                            break
+                    if real_label:
+                        break
+                
+                # If we found both fake and real labels, compare scores directly (ignore threshold)
+                if fake_label and real_label:
+                    # Predict based on which score is higher
+                    is_deepfake = fake_score > real_score
+                    # Confidence is the higher of the two scores
+                    confidence = max(fake_score, real_score)
+                elif fake_label:
+                    # Only fake label found, use threshold
                     is_deepfake = fake_score >= threshold
                     confidence = fake_score
                 else:
-                    # Fallback to old logic if no fake label found
+                    # Fallback to old logic if no fake/real labels found
                     max_label = max(scores.keys(), key=lambda k: scores[k])
                     confidence = scores[max_label]
                     is_deepfake = self._is_deepfake_label(max_label, confidence, threshold)
@@ -1146,10 +1167,10 @@ class EnsembleDetector:
                 # Convert SEResNet-50 result to DeepfakeDetectionResult
                 seresnet50_result = self.seresnet50_detector.detect_single(image_input, use_ensemble=False)
                 
-                # Apply threshold to determine prediction (SEResNet's detect_single uses fake_prob > real_prob logic)
-                # Override with threshold-based prediction for consistency with other models
-                is_deepfake = seresnet50_result.fake_probability >= threshold
-                confidence = seresnet50_result.fake_probability if is_deepfake else seresnet50_result.real_probability
+                # Ignore threshold - predict based on which score is higher
+                is_deepfake = seresnet50_result.fake_probability > seresnet50_result.real_probability
+                # Confidence is the higher of the two scores
+                confidence = max(seresnet50_result.fake_probability, seresnet50_result.real_probability)
                 
                 return DeepfakeDetectionResult(
                     is_deepfake=is_deepfake,
