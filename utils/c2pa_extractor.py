@@ -147,6 +147,12 @@ class C2paExtractor:
                 # This is expected - image simply doesn't have C2PA credentials
                 result['hasC2pa'] = False
                 result['error'] = None  # Not actually an error
+            # Check for image parsing errors (corrupted or incompatible format)
+            elif 'Unknown image format' in error_msg or 'asset could not be parsed' in error_msg:
+                # Image file cannot be parsed by C2PA library - treat as no C2PA data
+                result['hasC2pa'] = False
+                result['error'] = None  # Not actually an error, just unsupported/corrupted
+                logging.debug(f"C2PA: Image format not parseable for {image_path}: {error_msg}")
             else:
                 # Unexpected error
                 result['error'] = f"Error extracting C2PA data: {error_msg}"
