@@ -13,7 +13,7 @@ def register_mcp_text_endpoints(app: func.FunctionApp):
     
     Args:
         app: The Azure Functions FunctionApp instance to register endpoints with.
-    """
+    # """
     
     # Tool properties for get_text_models MCP tool
     tool_properties_get_text_models = []
