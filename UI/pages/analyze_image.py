@@ -52,13 +52,10 @@ if input_method == "Upload Image":
             on_change=lambda: None
         )
     
-    # Handle file state changes first
-    if uploaded_file is None and st.session_state.uploaded_filename:
-        st.session_state.image_data = None
-        st.session_state.image_source = None
-        st.session_state.analysis_result = None
-        st.session_state.uploaded_filename = ""
-    elif uploaded_file is not None:
+    # Handle file state changes - only update if file is newly uploaded
+    # Don't clear when uploaded_file is None (could be from page navigation)
+    if uploaded_file is not None:
+        # New file uploaded
         image = load_image_from_upload(uploaded_file)
         if image:
             st.session_state.image_data = image

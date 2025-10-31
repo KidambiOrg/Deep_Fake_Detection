@@ -22,9 +22,10 @@ col_input, col_result = st.columns([1, 2], gap="medium")
 with col_input:
     st.markdown("#### Enter text below to analyze")
     
-    # Text area for input
+    # Text area for input - use session state to preserve text when switching pages
     text_input = st.text_area(
         "Text Input",
+        value=st.session_state.text_data if st.session_state.text_data else "",
         placeholder="Copy and paste text here.",
         height=400,
         label_visibility="collapsed",
@@ -32,12 +33,16 @@ with col_input:
         key="text_input_area"
     )
     
+    # Update session state if text changes (before analysis)
+    if text_input and not st.session_state.is_analyzing:
+        st.session_state.text_data = text_input
+    
     # Buttons row
     col_clear, col_analyze = st.columns(2, gap="small")
     
     with col_clear:
         if st.button("clear", key="clear_text", use_container_width=True):
-            st.session_state.text_data = None
+            st.session_state.text_data = ""
             st.session_state.text_analysis_result = None
             st.rerun()
     
