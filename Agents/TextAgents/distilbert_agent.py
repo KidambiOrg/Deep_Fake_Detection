@@ -35,7 +35,8 @@ Return IndividualModelScore with fakeScore and realScore."""
     agent = chat_client.create_agent(
         name=agent_name,
         instructions=instructions,
-        tools=[detect_with_distilbert_tool]
+        tools=[detect_with_distilbert_tool],
+        seed=42
     )
     
     logger.info(f"Created {agent_name} agent successfully")

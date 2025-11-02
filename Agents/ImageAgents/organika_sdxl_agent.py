@@ -50,7 +50,8 @@ Do not include any text before or after the JSON output."""
     agent = chat_client.create_agent(
         name=agent_name,
         instructions=instructions,
-        tools=[detect_with_organika_sdxl_tool]
+        tools=[detect_with_organika_sdxl_tool],
+        seed=42
     )
     
     logger.info(f"Created {agent_name} agent successfully")
