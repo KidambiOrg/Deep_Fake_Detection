@@ -416,8 +416,12 @@ def apply_ensemble_voting(
         averageReal=avg_real_score,
         votingMethod=voting_method,
         voting=voting_result,
-        individualModelResults=individual_results
+        individualModelResults=individual_results,
+        markdown=""  # Will be populated next
     )
+    
+    # Generate and populate markdown report
+    result.markdown = generate_markdown_report(result)
     
     return result
 
@@ -451,22 +455,5 @@ def generate_markdown_report(result: ImageDetectionResult) -> str:
     for model_result in result.individualModelResults:
         markdown += f"| {model_result.model} | {model_result.prediction} | {model_result.confidence:.2%} | {model_result.fakeScore:.2%} | {model_result.realScore:.2%} |\n"
     
-    # Add recommendation
-    markdown += f"\n## Recommendation\n\n"
-    
-    if result.prediction == 'FAKE':
-        if result.confidence > 0.8:
-            markdown += "⚠️ **High confidence deepfake detection.** Very likely to be fake.\n"
-        elif result.confidence > 0.6:
-            markdown += "⚠️ **Moderate confidence deepfake detection.** Likely to be fake.\n"
-        else:
-            markdown += "⚠️ **Low confidence deepfake detection.** Consider manual review.\n"
-    else:
-        if result.confidence > 0.8:
-            markdown += "✅ **High confidence real image.** Very likely to be authentic.\n"
-        elif result.confidence > 0.6:
-            markdown += "✅ **Moderate confidence real image.** Likely to be authentic.\n"
-        else:
-            markdown += "⚠️ **Borderline case.** Consider manual review or trying different voting methods.\n"
     
     return markdown

@@ -81,6 +81,7 @@ class ImageDetectionResult(BaseModel):
         default_factory=list,
         description="Individual results from each model"
     )
+    markdown: str = Field(default="", description="Markdown formatted report")
     exifData: Optional[ExifData] = Field(default=None, description="EXIF metadata from image")
     c2paData: Optional[C2paData] = Field(default=None, description="C2PA (Content Credentials) metadata")
 
