@@ -46,24 +46,43 @@ _load_environment_settings()
 class BlobStorageModelLoader:
     """Helper class to download and cache models from Azure Blob Storage"""
     
-    def __init__(self, storage_account_name: Optional[str] = None, connection_string: Optional[str] = None):
+    def __init__(self, storage_account_name: Optional[str] = None):
         """
-        Initialize blob storage client using Managed Identity (DefaultAzureCredential) or connection string.
-        Prefers Managed Identity for better security.
+        Initialize blob storage configuration (lazy initialization - connection happens on first use).
+        Uses Managed Identity (DefaultAzureCredential) for authentication.
         
         Args:
             storage_account_name: Azure Storage account name (for Managed Identity).
                                 If None, reads from environment variable STORAGE_ACCOUNT_NAME
-            connection_string: Azure Storage connection string (fallback option).
-                             If None, reads from environment variable MODEL_BLOB_STORAGE
         """
-        # Try Managed Identity first (recommended for production)
+        # Store configuration but don't connect yet (lazy initialization)
         self.storage_account_name = storage_account_name or os.environ.get("STORAGE_ACCOUNT_NAME")
         
+        # Blob client will be initialized on first use
+        self._blob_service_client: Optional[BlobServiceClient] = None
+        self._initialization_attempted = False
+        
+        # Set up local cache directory
+        self.cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Model cache directory: {self.cache_dir}")
+    
+    @property
+    def blob_service_client(self) -> Optional[BlobServiceClient]:
+        """
+        Lazy initialization of blob service client.
+        Only connects to blob storage when actually needed (after cache check fails).
+        """
+        if self._initialization_attempted:
+            return self._blob_service_client
+        
+        self._initialization_attempted = True
+        
+        # Try Managed Identity first (recommended for production)
         if self.storage_account_name:
             try:
                 # Use DefaultAzureCredential with explicit logging
-                logger.info(f"Attempting to connect to storage account: {self.storage_account_name}")
+                logger.info(f"Connecting to storage account: {self.storage_account_name}")
                 
                 # Check if running in Azure (Container Apps, App Service, etc.)
                 is_azure_environment = os.environ.get("WEBSITE_INSTANCE_ID") or os.environ.get("CONTAINER_APP_NAME")
@@ -99,7 +118,7 @@ class BlobStorageModelLoader:
                 azure_logger.setLevel(logging.INFO)
                 azure_logger.addHandler(logging.StreamHandler(sys.stdout))
                 
-                self.blob_service_client = BlobServiceClient(
+                self._blob_service_client = BlobServiceClient(
                     account_url=account_url,
                     credential=credential,
                     logging_enable=True
@@ -107,42 +126,17 @@ class BlobStorageModelLoader:
                 
                 logger.info(f"Azure Blob Storage client initialized with Managed Identity: {self.storage_account_name}")
                 logger.info(f"Storage account URL: {account_url}")
-                logger.info("Authentication will be verified when downloading models")
+                return self._blob_service_client
                     
             except Exception as e:
-                logger.warning(f"Failed to initialize with Managed Identity: {e}")
-                logger.info("Falling back to connection string authentication...")
-                self.blob_service_client = None
+                logger.error(f"Failed to initialize with Managed Identity: {e}")
         else:
-            self.blob_service_client = None
+            logger.warning("STORAGE_ACCOUNT_NAME not configured. Model loading from blob storage disabled.")
         
-        # Fallback to connection string if Managed Identity not configured or failed
-        if not self.blob_service_client:
-            self.connection_string = connection_string or os.environ.get("MODEL_BLOB_STORAGE")
-            
-            if not self.connection_string:
-                logger.warning("Neither STORAGE_ACCOUNT_NAME nor MODEL_BLOB_STORAGE configured. Model loading from blob storage disabled.")
-                self.blob_service_client = None
-            else:
-                try:
-                    self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
-                    logger.info("Azure Blob Storage client initialized with connection string")
-                except Exception as e:
-                    logger.error(f"Failed to initialize blob storage client: {e}")
-                    self.blob_service_client = None
-        
-        # Set up local cache directory
-        if self.blob_service_client:
-            self.cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Model cache directory: {self.cache_dir}")
-        else:
-            self.cache_dir = None
+        return None
     
     def _get_cache_path(self, blob_path: str) -> Path:
         """Get local cache path for a blob"""
-        if not self.cache_dir:
-            raise RuntimeError("Cache directory not initialized")
         # Create hash of blob path to avoid path length issues
         path_hash = hashlib.md5(blob_path.encode()).hexdigest()
         filename = Path(blob_path).name
@@ -171,9 +165,9 @@ class BlobStorageModelLoader:
         
         cache_path = self._get_cache_path(f"{container_name}/{blob_name}")
         
-        # Check if already cached
-        if cache_path.exists() and not force_download:
-            logger.info(f"Using cached model: {cache_path}")
+        # Check if already cached (cache hit - skip blob connection)
+        if cache_path.exists() and cache_path.stat().st_size > 0 and not force_download:
+            logger.info(f"Using cached model (skipping blob connection): {cache_path}")
             return str(cache_path)
         
         try:
@@ -228,8 +222,14 @@ class BlobStorageModelLoader:
         try:
             # Create local directory based on prefix
             local_dir = self.cache_dir / container_name / blob_prefix
-            local_dir.mkdir(parents=True, exist_ok=True)
             
+            # Check if directory already exists and has files (cache hit)
+            if local_dir.exists() and any(local_dir.iterdir()) and not force_download:
+                logger.info(f"Using cached model directory (skipping blob connection): {local_dir}")
+                return local_dir
+            
+            # Cache miss or force download - create directory and download from blob
+            local_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Downloading directory from blob storage: {container_name}/{blob_prefix}")
             
             # Get container client

@@ -25,6 +25,9 @@ def get_cached_model_directory(model_key: str, blob_config: dict) -> str:
     Get cached model directory or download from blob storage.
     Priority: Cache → Blob download to cache
     
+    Note: blob_storage_helper now handles cache checking internally,
+    so we just delegate to it directly (no double checking).
+    
     Args:
         model_key: Model key identifier
         blob_config: Blob storage configuration with blob_prefix
@@ -32,47 +35,33 @@ def get_cached_model_directory(model_key: str, blob_config: dict) -> str:
     Returns:
         Local directory path to model in cache
     """
-    # Check cache
-    cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    
     # Check for directory blob
     if 'blob_prefix' in blob_config:
-        blob_path = f"{blob_config['container']}/{blob_config['blob_prefix']}"
-        path_hash = hashlib.md5(blob_path.encode()).hexdigest()
-        cache_path = cache_dir / f"{path_hash}_Organika"
-        
-        # If cached, return cached path
-        if cache_path.exists() and any(cache_path.iterdir()):
-            logger.info(f"Using cached model directory for {model_key}: {cache_path}")
-            return str(cache_path)
-        
-        # Not cached, download from blob
-        logger.info(f"Model not cached, downloading directory from blob storage: {blob_path}")
-        
         try:
             from utils.blob_storage_helper import get_blob_loader
             blob_loader = get_blob_loader()
             
             if blob_loader and blob_loader.blob_service_client:
+                # download_directory now checks cache first internally
                 downloaded_path = blob_loader.download_directory(
                     container_name=blob_config['container'],
                     blob_prefix=blob_config['blob_prefix']
                 )
                 
                 if downloaded_path:
-                    logger.info(f"Downloaded {model_key} to: {downloaded_path}")
                     return str(downloaded_path)
                 else:
-                    logger.warning(f"Failed to download {model_key} from blob storage")
+                    logger.warning(f"Failed to get {model_key} from cache or blob storage")
             else:
                 logger.warning("Blob storage not configured")
                 
         except Exception as e:
-            logger.error(f"Error downloading {model_key}: {e}")
+            logger.error(f"Error getting {model_key}: {e}")
         
-        # If download failed, return expected cache path (will fail gracefully in caller)
-        logger.error(f"Failed to get model {model_key} - cache miss and blob download failed")
+        # If failed, return expected cache path (will fail gracefully in caller)
+        cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
+        cache_path = cache_dir / blob_config['container'] / blob_config['blob_prefix']
+        logger.error(f"Failed to get model {model_key} - returning fallback path")
         return str(cache_path)
     
     # No blob config provided
