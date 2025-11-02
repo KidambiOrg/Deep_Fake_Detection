@@ -195,6 +195,13 @@ class BlobStorageModelLoader:
             
         except Exception as e:
             logger.error(f"Failed to download model from blob storage: {e}")
+            # Clean up empty/corrupt file if created
+            if cache_path.exists():
+                try:
+                    cache_path.unlink()
+                    logger.info(f"Removed corrupt cache file: {cache_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to remove corrupt cache file: {cleanup_error}")
             return None
     
     def download_directory(

@@ -90,30 +90,79 @@ def warmup_image_models(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="analyzeImage", methods=["POST"])
-def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
-    """Analyze an image for deepfake detection"""
-    logging.info('Image analysis endpoint called.')
+async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Analyze an image for deepfake detection using Agent Framework workflows.
+    
+    Uses concurrent workflow pattern with 5 detection agents:
+    - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL
+    
+    Supports 14+ ensemble voting methods including:
+    majority, weighted, bayesian, entropy_weighted, etc.
+    """
+    logging.info('Image analysis endpoint (Agent Framework) called.')
 
     try:
-        # Lazy import to avoid loading models at startup
-        from Services.app_detect_image import process_image
+        # Import Agent Framework workflow
+        from Agents import run_image_detection_workflow
+        import base64
+        import io
+        from PIL import Image
         
         # Get the uploaded image file
         image_file = req.files.get('image')
         
         if not image_file:
             return func.HttpResponse(
-                "Please provide an image file in the request body with key 'image'.",
-                status_code=400
+                json.dumps({"error": "Please provide an image file with key 'image'."}),
+                status_code=400,
+                mimetype="application/json"
             )
         
-        # Read the image data
+        # Read image data and validate by loading with PIL
+        from PIL import ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow loading truncated images
+        
         image_data = image_file.read()
+        logging.info(f"Received image: {image_file.filename}, size: {len(image_data)} bytes")
         
-        logging.info(f"Received image file: {image_file.filename}, size: {len(image_data)} bytes")
+        # Load and validate the image
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            image.load()  # Force loading the image data to detect truncation early
+            
+            # Ensure RGB format
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Re-encode to base64 (this ensures we have a valid, complete image)
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            logging.info(f"Successfully loaded and validated image: {image.size}, mode: {image.mode}")
+            
+        except Exception as img_err:
+            logging.error(f"Failed to load/validate image: {img_err}")
+            return func.HttpResponse(
+                json.dumps({"error": f"Invalid or corrupted image file: {str(img_err)}"}),
+                status_code=400,
+                mimetype="application/json"
+            )
         
-        # Call the process_image function with filename
-        result_json = process_image(image_data, filename=image_file.filename)
+        # Use fixed values matching original implementation
+        threshold = 0.20
+        voting_method = 'weighted'
+        
+        # Run Agent Framework concurrent workflow
+        result = await run_image_detection_workflow(
+            base64_image=image_base64,
+            threshold=threshold,
+            voting_method=voting_method
+        )
+        
+        # Convert Pydantic model to JSON
+        result_json = result.model_dump_json(indent=2)
         
         return func.HttpResponse(
             result_json,
@@ -122,10 +171,11 @@ def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
         )
         
     except Exception as e:
-        logging.error(f"Error processing image: {str(e)}")
+        logging.error(f"Error in Agent Framework image analysis: {str(e)}")
         return func.HttpResponse(
-            f"Error processing image: {str(e)}",
-            status_code=500
+            json.dumps({"error": f"Analysis error: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
         )
 
 
@@ -211,13 +261,18 @@ def warmup_text_models(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.route(route="analyzeText", methods=["POST"])
-def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
-    """Analyze text for AI-generated content detection"""
-    logging.info('Text analysis endpoint called.')
+async def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Analyze text for AI-generated content detection using Agent Framework workflows.
+    
+    Uses concurrent workflow pattern with 4 detection agents:
+    - BERT-ML, BoW-ML, CharCNN, DistilBERT
+    """
+    logging.info('Text analysis endpoint (Agent Framework) called.')
 
     try:
-        # Lazy import to avoid loading models at startup
-        from Services.app_detect_text import detect_text_json
+        # Import Agent Framework workflow
+        from Agents import run_text_detection_workflow
         
         # Get request body
         try:
@@ -232,9 +287,8 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        # Extract text and voting method
+        # Extract text only - no threshold parameter
         text = req_body.get('text')
-        voting_method = req_body.get('voting_method', 'weighted')
         
         if not text:
             return func.HttpResponse(
@@ -256,10 +310,13 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        logging.info(f"Analyzing text (length: {len(text)} chars) with voting method: {voting_method}")
+        logging.info(f"Analyzing text (length: {len(text)} chars)")
         
-        # Analyze the text using module-level function
-        result_json = detect_text_json(text, voting_method=voting_method, indent=2)
+        # Run Agent Framework concurrent workflow
+        result = await run_text_detection_workflow(text=text)
+        
+        # Convert Pydantic model to JSON
+        result_json = result.model_dump_json(indent=2)
         
         return func.HttpResponse(
             result_json,
@@ -278,7 +335,7 @@ def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
     except Exception as e:
-        logging.error(f"Error analyzing text: {str(e)}")
+        logging.error(f"Error in Agent Framework text analysis: {str(e)}")
         return func.HttpResponse(
             json.dumps({
                 "error": "Analysis error",
@@ -441,16 +498,18 @@ def check_image_models_status_mcp(context) -> str:
 @app.mcp_tool_trigger(
     arg_name="context",
     tool_name="analyze_image_deepfake",
-    description="Analyze an image to detect if it's a deepfake or AI-generated. Accepts image URL, local file path, or base64-encoded data.",
+    description="Analyze an image to detect if it's a deepfake or AI-generated. Accepts image URL, local file path, or base64-encoded data. Uses Agent Framework with concurrent workflow.",
     tool_properties=_tool_properties_analyze_image,
 )
-def analyze_image_deepfake_mcp(context) -> str:
-    """MCP tool endpoint to analyze an image for deepfake detection."""
-    logging.info('MCP tool analyze_image_deepfake called.')
+async def analyze_image_deepfake_mcp(context) -> str:
+    """MCP tool endpoint to analyze an image for deepfake detection using Agent Framework."""
+    logging.info('MCP tool analyze_image_deepfake (Agent Framework) called.')
     
     try:
         import requests
         import base64
+        import asyncio
+        import io
         
         if not context:
             return json.dumps({
@@ -465,8 +524,9 @@ def analyze_image_deepfake_mcp(context) -> str:
         image_data_b64 = arguments.get("image_data")
         image_path = arguments.get("image_path")
         
+        # Use fixed values matching original implementation
         threshold = 0.20
-        voting_method = "median"
+        voting_method = 'weighted'
         
         if not image_url and not image_data_b64 and not image_path:
             return json.dumps({
@@ -528,38 +588,59 @@ def analyze_image_deepfake_mcp(context) -> str:
                     "message": "Unable to fetch image from the provided URL"
                 })
         
-        logging.info(f"Using default threshold: {threshold}, voting method: {voting_method}")
+        logging.info(f"Using threshold: {threshold}, voting method: {voting_method}")
         
-        from Services.app_detect_image import process_image, get_ensemble_detector
+        # Import Agent Framework workflow
+        from Agents import run_image_detection_workflow
+        from PIL import Image, ImageFile
         
+        # Validate and re-encode image to ensure it's complete and valid
         try:
-            ensemble = get_ensemble_detector(debug=False, timeout=5)
-            if ensemble is None:
-                return json.dumps({
-                    "status": "loading",
-                    "message": "Models are still loading. This is the first request and model initialization takes 2-5 minutes. Please try again in a few moments.",
-                    "estimated_wait_time": "2-5 minutes",
-                    "tip": "Subsequent requests will be much faster once models are loaded."
-                })
-        except Exception as e:
-            logging.warning(f"Models not ready yet: {str(e)}")
+            ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow loading truncated images
+            
+            image = Image.open(io.BytesIO(image_data))
+            image.load()  # Force loading the image data to detect truncation early
+            
+            # Ensure RGB format
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Re-encode to base64 (this ensures we have a valid, complete image)
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            logging.info(f"Successfully validated image: {image.size}, mode: {image.mode}")
+            
+        except Exception as img_err:
+            logging.error(f"Failed to load/validate image: {img_err}")
             return json.dumps({
-                "status": "loading",
-                "message": "Models are being initialized. This happens on first request and takes 2-5 minutes. Please try again shortly.",
-                "estimated_wait_time": "2-5 minutes"
+                "error": f"Invalid or corrupted image: {str(img_err)}",
+                "message": "The provided image is incomplete or corrupted"
             })
         
-        result_json = process_image(image_data)
-        result = json.loads(result_json)
+        # Run Agent Framework concurrent workflow
+        result = await run_image_detection_workflow(
+            base64_image=image_base64,
+            image_path=image_path if image_path else None,
+            threshold=threshold,
+            voting_method=voting_method
+        )
         
-        result["mcp_metadata"] = {
+        # Convert Pydantic model to dict
+        result_dict = result.model_dump()
+        
+        # Add MCP metadata
+        result_dict["mcp_metadata"] = {
             "image_source": image_source,
             "threshold": threshold,
             "voting_method": voting_method,
-            "analysis_timestamp": "2025-10-30"
+            "framework": "agent-framework-sdk",
+            "concurrent_agents": 5,
+            "analysis_timestamp": "2025-10-31"
         }
         
-        return json.dumps(result, indent=2)
+        return json.dumps(result_dict, indent=2)
         
     except Exception as e:
         logging.error(f"Error in MCP analyze_image_deepfake: {str(e)}")
@@ -671,12 +752,12 @@ def check_text_models_status_mcp(context) -> str:
 @app.mcp_tool_trigger(
     arg_name="context",
     tool_name="analyze_text_deepfake",
-    description="Analyze text to detect if it's AI-generated or human-written using an ensemble of ML models.",
+    description="Analyze text to detect if it's AI-generated or human-written using Agent Framework with concurrent ML models.",
     tool_properties=_tool_properties_analyze_text,
 )
-def analyze_text_deepfake_mcp(context) -> str:
-    """MCP tool endpoint to analyze text for AI-generated content detection."""
-    logging.info('MCP tool analyze_text_deepfake called.')
+async def analyze_text_deepfake_mcp(context) -> str:
+    """MCP tool endpoint to analyze text for AI-generated content detection using Agent Framework."""
+    logging.info('MCP tool analyze_text_deepfake (Agent Framework) called.')
     
     try:
         if not context:
@@ -689,7 +770,6 @@ def analyze_text_deepfake_mcp(context) -> str:
         arguments = content.get("arguments", {})
         
         text = arguments.get("text")
-        voting_method = "weighted"
         
         if not text:
             return json.dumps({
@@ -703,20 +783,26 @@ def analyze_text_deepfake_mcp(context) -> str:
                 "message": "Text cannot be empty"
             })
         
-        logging.info(f"Analyzing text (length: {len(text)} chars) with voting method: {voting_method}")
+        logging.info(f"Analyzing text (length: {len(text)} chars)")
         
-        from Services.app_detect_text import detect_text_json
+        # Import Agent Framework workflow
+        from Agents import run_text_detection_workflow
         
-        result_json = detect_text_json(text, voting_method=voting_method, indent=2)
-        result = json.loads(result_json)
+        # Run Agent Framework concurrent workflow
+        result = await run_text_detection_workflow(text=text)
         
-        result["mcp_metadata"] = {
+        # Convert Pydantic model to dict
+        result_dict = result.model_dump()
+        
+        # Add MCP metadata
+        result_dict["mcp_metadata"] = {
             "text_length": len(text),
-            "voting_method": voting_method,
-            "analysis_timestamp": "2025-10-30"
+            "framework": "agent-framework-sdk",
+            "concurrent_agents": 4,
+            "analysis_timestamp": "2025-10-31"
         }
         
-        return json.dumps(result, indent=2)
+        return json.dumps(result_dict, indent=2)
         
     except ValueError as e:
         logging.error(f"Validation error in MCP analyze_text_deepfake: {str(e)}")

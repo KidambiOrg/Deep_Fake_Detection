@@ -10,6 +10,7 @@ TEXT_MODEL_REGISTRY = {
     # Character-level CNN model
     'charcnn': {
         'name': 'CharCNN',
+        'display_name': 'CharCNN Detector',
         'description': 'Character-level CNN for deepfake text detection',
         'architecture': 'CNN',
         'source': 'trained',
@@ -36,6 +37,7 @@ TEXT_MODEL_REGISTRY = {
     # BERT-based ML classifier
     'bert_ml': {
         'name': 'BERT ML',
+        'display_name': 'BERT-ML Detector',
         'description': 'BERT-based ML classifier for deepfake text detection',
         'architecture': 'BERT + LogisticRegression',
         'source': 'trained',
@@ -55,6 +57,7 @@ TEXT_MODEL_REGISTRY = {
     # DistilBERT-based ML classifier
     'distilbert_ml': {
         'name': 'DistilBERT ML',
+        'display_name': 'DistilBERT Detector',
         'description': 'DistilBERT-based ML classifier for deepfake text detection',
         'architecture': 'DistilBERT + LogisticRegression',
         'source': 'trained',
@@ -74,6 +77,7 @@ TEXT_MODEL_REGISTRY = {
     # Bag of Words ML classifier
     'bow_ml': {
         'name': 'BoW ML',
+        'display_name': 'BoW-ML Detector',
         'description': 'Bag of Words ML classifier for deepfake text detection',
         'architecture': 'TF-IDF + LogisticRegression',
         'source': 'trained',

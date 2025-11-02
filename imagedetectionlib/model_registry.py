@@ -10,14 +10,21 @@ MODEL_REGISTRY = {
     # HuggingFace Models
     'prithiv-v1': {
         'name': 'prithivMLMods/deepfake-detector-model-v1',
+        'display_name': 'Prithiv V1 Detector',
         'description': 'SigLIP-based deepfake detector (default)',
         'architecture': 'SigLIP',
         'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
-        'recommended_threshold': 0.5        
+        'recommended_threshold': 0.5,
+        'local_path': 'Models/huggingface/prithivMLMods/deepfake-detector-model-v1',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'huggingface/prithivMLMods/deepfake-detector-model-v1'
+        }
     },
     'dima-vit': {
         'name': 'dima806/deepfake_vs_real_image_detection',
+        'display_name': 'DimaVit Detector',
         'description': 'Vision Transformer based detector',
         'architecture': 'ViT',
         'source': 'huggingface',
@@ -31,16 +38,23 @@ MODEL_REGISTRY = {
     },
     'organika-sdxl': {
         'name': 'Organika/sdxl-detector',
+        'display_name': 'Organika SDXL Detector',
         'description': 'Specialized for Stable Diffusion generated images',
         'architecture': 'Custom',
         'source': 'huggingface',
         'labels': None,
-        'recommended_threshold': 0.5 
+        'recommended_threshold': 0.5,
+        'local_path': 'Models/huggingface/Organika/sdxl-detector',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'huggingface/Organika/sdxl-detector'
+        }
     },
     
     # Nonescape Models   
     'nonescape-full': {
         'name': 'nonescape-v0',
+        'display_name': 'NoEscape Detector',
         'description': 'Full Nonescape model for high accuracy detection',
         'architecture': 'Nonescape',
         'source': 'nonescape',
@@ -57,6 +71,7 @@ MODEL_REGISTRY = {
     # SEResNet-50 Models    
     'seresnet50': {
         'name': 'SEResNet-50 Fine-tuned',
+        'display_name': 'SEResNet50 Detector',
         'description': 'SEResNet-50 fine-tuned for deepfake detection',
         'architecture': 'SEResNet-50',
         'source': 'seresnet50',
