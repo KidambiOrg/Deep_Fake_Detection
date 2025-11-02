@@ -13,6 +13,7 @@ import numpy as np
 import os
 import logging
 import json
+import threading
 from typing import List
 from dotenv import load_dotenv
 
@@ -20,29 +21,51 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Global agent cache - initialized once and reused
+_cached_text_agents = None
+_text_agents_lock = threading.Lock()
+
 def get_or_create_text_agents():
     """
-    Get or create text detection agents. Each agent manages its own lifecycle.
+    Get or create text detection agents with singleton pattern.
+    Agents and their models are loaded only once and cached globally.
+    Thread-safe initialization prevents duplicate loading.
         
     Returns:
         Tuple of (bert_ml_agent, bow_ml_agent, charcnn_agent, distilbert_agent)
     """
-    logger.info("Initializing text detection agents...")
+    global _cached_text_agents
     
-    # Each agent internally gets its display name from registry and checks for existing agent
-    bert_ml_agent = create_bert_ml_agent()
-    bow_ml_agent = create_bow_ml_agent()
-    charcnn_agent = create_charcnn_agent()
-    distilbert_agent = create_distilbert_agent()
+    # Fast path: if agents already exist, return immediately
+    if _cached_text_agents is not None:
+        logger.info("Reusing cached text agents")
+        return _cached_text_agents
     
-    logger.info("All text agents initialized successfully")
-    
-    return (
-        bert_ml_agent,
-        bow_ml_agent,
-        charcnn_agent,
-        distilbert_agent
-    )
+    # Slow path: need to create agents (with lock to prevent concurrent initialization)
+    with _text_agents_lock:
+        # Double-check after acquiring lock
+        if _cached_text_agents is not None:
+            logger.info("Reusing cached text agents (after lock)")
+            return _cached_text_agents
+        
+        logger.info("Initializing text detection agents for the first time...")
+        
+        # Create agents once - each agent's tool will also cache its model
+        bert_ml_agent = create_bert_ml_agent()
+        bow_ml_agent = create_bow_ml_agent()
+        charcnn_agent = create_charcnn_agent()
+        distilbert_agent = create_distilbert_agent()
+        
+        # Cache the agents globally
+        _cached_text_agents = (
+            bert_ml_agent,
+            bow_ml_agent,
+            charcnn_agent,
+            distilbert_agent
+        )
+        
+        logger.info("All text agents created and cached successfully")
+        return _cached_text_agents
 
 async def run_text_detection_workflow(text: str) -> TextDetectionResult:
     """Run concurrent text detection workflow using Agent Framework."""

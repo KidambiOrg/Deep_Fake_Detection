@@ -16,6 +16,7 @@ import logging
 import json
 import base64
 import io
+import threading
 from typing import List, Optional
 from dotenv import load_dotenv
 from PIL import Image
@@ -25,31 +26,53 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Global agent cache - initialized once and reused
+_cached_agents = None
+_agents_lock = threading.Lock()
+
 def get_or_create_agents():
     """
-    Get or create detection agents. Each agent manages its own lifecycle.
+    Get or create detection agents with singleton pattern.
+    Agents and their models are loaded only once and cached globally.
+    Thread-safe initialization prevents duplicate loading.
     
     Returns:
         Tuple of (nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent)
     """
-    logger.info("Initializing detection agents...")
+    global _cached_agents
     
-    # Each agent internally gets its display name from registry and checks for existing agent
-    nonescape_agent = create_nonescape_agent()
-    seresnet50_agent = create_seresnet50_agent()
-    prithiv_v1_agent = create_prithiv_v1_agent()
-    dima_vit_agent = create_dima_vit_agent()
-    organika_sdxl_agent = create_organika_sdxl_agent()
+    # Fast path: if agents already exist, return immediately
+    if _cached_agents is not None:
+        logger.info("Reusing cached agents")
+        return _cached_agents
     
-    logger.info("All detection agents created successfully")
-    
-    return (
-        nonescape_agent,
-        seresnet50_agent,
-        prithiv_v1_agent,
-        dima_vit_agent,
-        organika_sdxl_agent
-    )
+    # Slow path: need to create agents (with lock to prevent concurrent initialization)
+    with _agents_lock:
+        # Double-check after acquiring lock
+        if _cached_agents is not None:
+            logger.info("Reusing cached agents (after lock)")
+            return _cached_agents
+        
+        logger.info("Initializing detection agents for the first time...")
+        
+        # Create agents once - each agent's tool will also cache its model
+        nonescape_agent = create_nonescape_agent()
+        seresnet50_agent = create_seresnet50_agent()
+        prithiv_v1_agent = create_prithiv_v1_agent()
+        dima_vit_agent = create_dima_vit_agent()
+        organika_sdxl_agent = create_organika_sdxl_agent()
+        
+        # Cache the agents globally
+        _cached_agents = (
+            nonescape_agent,
+            seresnet50_agent,
+            prithiv_v1_agent,
+            dima_vit_agent,
+            organika_sdxl_agent
+        )
+        
+        logger.info("All detection agents created and cached successfully")
+        return _cached_agents
 
 async def run_image_detection_workflow(
     image_path: Optional[str] = None,
