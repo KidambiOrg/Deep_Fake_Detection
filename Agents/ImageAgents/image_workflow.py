@@ -11,7 +11,6 @@ from Agents.ImageAgents.dima_vit_agent import create_dima_vit_agent
 from Agents.ImageAgents.organika_sdxl_agent import create_organika_sdxl_agent
 from outputModel.image_detection_output_model import ImageDetectionResult, IndividualModelResult, VotingResult
 from imagedetectionlib.model_registry import get_model_info
-from utils.image_file_helper import load_and_save_to_temp
 import numpy as np
 import os
 import logging
@@ -74,11 +73,9 @@ def get_or_create_agents():
         return _cached_agents
 
 async def run_image_detection_workflow(
-    image_path: Optional[str] = None,
-    base64_image: Optional[str] = None,
+    image_path: str,
     threshold: float = 0.20,
-    voting_method: str = 'weighted',
-    filename: Optional[str] = None
+    voting_method: str = 'weighted'
 ) -> ImageDetectionResult:
     """
     Run concurrent image detection workflow using Agent Framework.
@@ -100,45 +97,35 @@ async def run_image_detection_workflow(
     - consensus_threshold: Adaptive threshold based on consensus
     
     Args:
-        image_path: Path to image file (optional if base64_image provided)
-        base64_image: Base64-encoded image (optional if image_path provided)
+        image_path: Path to image file (required)
         threshold: Detection threshold (0.0-1.0)
         voting_method: Ensemble voting method
         
     Returns:
         ImageDetectionResult with ensemble predictions and markdown report
     """
-    # Initialize temp_image_path early to avoid "possibly unbound" errors in exception handlers
-    temp_image_path = None
-    
     try:
         # Get or create detection agents (cached to avoid recreating on every request)
         logger.info("Getting detection agents...")
         nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent = get_or_create_agents()
         
-        # Load image and save to temporary file
-        temp_image_path = load_and_save_to_temp(
-            image_path=image_path,
-            base64_image=base64_image
-        )
+        # Validate image_path exists
+        if not image_path:
+            raise ValueError("image_path is required")
         
-        # Determine filename to use
-        final_filename: str
-        if filename:
-            final_filename = filename
-        elif image_path:
-            final_filename = os.path.basename(image_path)
-        elif temp_image_path:
-            final_filename = os.path.basename(temp_image_path)
-        else:
-            final_filename = "uploaded_image"
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        logger.info(f"Using provided image path: {image_path}")
+        
+        # Extract filename from path
+        final_filename = os.path.basename(image_path)
         
         # Create custom aggregator with parameters
-        img_path = temp_image_path if temp_image_path else (image_path or "")
         custom_aggregator = create_image_aggregator(
             threshold=threshold,
             voting_method=voting_method,
-            image_path=img_path,
+            image_path=image_path,
             filename=final_filename
         )
         
@@ -155,7 +142,7 @@ async def run_image_detection_workflow(
         logger.info("Running concurrent detection workflow...")
         
         # Run the workflow - pass file path reference instead of base64
-        events = await workflow.run(temp_image_path)
+        events = await workflow.run(image_path)
         
         # Get the aggregated output from the custom aggregator
         # The aggregator returns a single ImageDetectionResult, but get_outputs() returns it in a list
@@ -173,15 +160,15 @@ async def run_image_detection_workflow(
         
     except Exception as e:
         logger.error(f"Error in image detection workflow: {e}")
-        # Clean up temporary file on error
+        raise
+    finally:
+        # Clean up temporary file after workflow completes
         try:
-            import os
-            if temp_image_path and os.path.exists(temp_image_path):
-                os.unlink(temp_image_path)
-                logger.info(f"Cleaned up temporary file after error: {temp_image_path}")
+            if image_path and os.path.exists(image_path):
+                os.unlink(image_path)
+                logger.info(f"Cleaned up temporary file: {image_path}")
         except Exception as cleanup_err:
             logger.warning(f"Failed to clean up temporary file: {cleanup_err}")
-        raise
 
 
 def generate_markdown_report(result: ImageDetectionResult) -> str:
