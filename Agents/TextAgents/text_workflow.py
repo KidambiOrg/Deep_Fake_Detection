@@ -67,7 +67,7 @@ def get_or_create_text_agents():
         logger.info("All text agents created and cached successfully")
         return _cached_text_agents
 
-async def run_text_detection_workflow(text: str) -> TextDetectionResult:
+async def run_text_detection_workflow(text: str, text_identifier: str = "text_input") -> TextDetectionResult:
     """Run concurrent text detection workflow using Agent Framework."""
     try:
         # Get or create detection agents (cached to avoid recreating on every request)
@@ -149,6 +149,7 @@ async def run_text_detection_workflow(text: str) -> TextDetectionResult:
         
         result = TextDetectionResult(
             markdown=markdown,
+            textFile=text_identifier,
             text=text,
             prediction=prediction,
             confidence=float(confidence),

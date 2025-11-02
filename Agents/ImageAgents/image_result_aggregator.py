@@ -19,19 +19,21 @@ logger = logging.getLogger(__name__)
 def create_image_aggregator(
     threshold: float,
     voting_method: str,
-    image_path: str = ""
+    image_path: str = "",
+    filename: str = ""
 ) -> Callable:
     """
     Create a custom aggregator function with specific parameters.
     
     This factory function creates an aggregator callback that can be used with
     ConcurrentBuilder().with_aggregator(). The returned function captures the
-    threshold, voting_method, and image_path parameters via closure.
+    threshold, voting_method, image_path, and filename parameters via closure.
     
     Args:
         threshold: Detection threshold (0.0-1.0)
         voting_method: Ensemble voting method
         image_path: Path to the image being analyzed
+        filename: Name of the image file for tracking
         
     Returns:
         Async aggregator function that accepts results and returns ImageDetectionResult
@@ -41,7 +43,8 @@ def create_image_aggregator(
             results=results,
             threshold=threshold,
             voting_method=voting_method,
-            image_path=image_path
+            image_path=image_path,
+            filename=filename
         )
     
     return custom_aggregator
@@ -51,7 +54,8 @@ async def summarize_results(
     results: list[Any],
     threshold: float = 0.20,
     voting_method: str = 'weighted',
-    image_path: str = ""
+    image_path: str = "",
+    filename: str = ""
 ) -> ImageDetectionResult:
     """
     Custom aggregator callback that consolidates individual model detection results
@@ -66,6 +70,7 @@ async def summarize_results(
         threshold: Detection threshold (0.0-1.0)
         voting_method: Ensemble voting method
         image_path: Optional path to the analyzed image
+        filename: Name of the image file for tracking
         
     Returns:
         ImageDetectionResult with ensemble predictions
@@ -121,7 +126,8 @@ async def summarize_results(
         individual_results=individual_results,
         threshold=threshold,
         voting_method=voting_method,
-        image_path=image_path
+        image_path=image_path,
+        filename=filename
     )
     
     return ensemble_result
@@ -131,7 +137,8 @@ def apply_ensemble_voting(
     individual_results: List[IndividualModelResult],
     threshold: float,
     voting_method: str,
-    image_path: str = ""
+    image_path: str = "",
+    filename: str = ""
 ) -> ImageDetectionResult:
     """
     Apply ensemble voting logic from detect_deepfake_image.py.
@@ -385,8 +392,10 @@ def apply_ensemble_voting(
     else:
         raise ValueError(f"Unknown voting method: {voting_method}")
     
-    # Determine image filename
-    if image_path:
+    # Determine image filename - use provided filename first, fallback to path extraction
+    if filename:
+        image_file = filename
+    elif image_path:
         image_file = os.path.basename(image_path)
     else:
         image_file = "uploaded_image"

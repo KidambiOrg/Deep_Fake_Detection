@@ -77,7 +77,8 @@ async def run_image_detection_workflow(
     image_path: Optional[str] = None,
     base64_image: Optional[str] = None,
     threshold: float = 0.20,
-    voting_method: str = 'weighted'
+    voting_method: str = 'weighted',
+    filename: Optional[str] = None
 ) -> ImageDetectionResult:
     """
     Run concurrent image detection workflow using Agent Framework.
@@ -121,12 +122,24 @@ async def run_image_detection_workflow(
             base64_image=base64_image
         )
         
+        # Determine filename to use
+        final_filename: str
+        if filename:
+            final_filename = filename
+        elif image_path:
+            final_filename = os.path.basename(image_path)
+        elif temp_image_path:
+            final_filename = os.path.basename(temp_image_path)
+        else:
+            final_filename = "uploaded_image"
+        
         # Create custom aggregator with parameters
         img_path = temp_image_path if temp_image_path else (image_path or "")
         custom_aggregator = create_image_aggregator(
             threshold=threshold,
             voting_method=voting_method,
-            image_path=img_path
+            image_path=img_path,
+            filename=final_filename
         )
         
         # Build concurrent workflow using ConcurrentBuilder

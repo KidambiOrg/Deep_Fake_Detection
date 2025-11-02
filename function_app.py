@@ -119,12 +119,15 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
+        # Extract filename for tracking
+        filename = image_file.filename if image_file.filename else "uploaded_image"
+        
         # Read image data and validate by loading with PIL
         from PIL import ImageFile
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # Allow loading truncated images
         
         image_data = image_file.read()
-        logging.info(f"Received image: {image_file.filename}, size: {len(image_data)} bytes")
+        logging.info(f"Received image: {filename}, size: {len(image_data)} bytes")
         
         # Load and validate the image
         try:
@@ -158,7 +161,8 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
         result = await run_image_detection_workflow(
             base64_image=image_base64,
             threshold=threshold,
-            voting_method=voting_method
+            voting_method=voting_method,
+            filename=filename
         )
         
         # Convert Pydantic model to JSON
@@ -312,8 +316,13 @@ async def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Analyzing text (length: {len(text)} chars)")
         
+        # Create a text identifier (truncated text preview)
+        text_identifier = text[:50].replace('\n', ' ').strip()
+        if len(text) > 50:
+            text_identifier += "..."
+        
         # Run Agent Framework concurrent workflow
-        result = await run_text_detection_workflow(text=text)
+        result = await run_text_detection_workflow(text=text, text_identifier=text_identifier)
         
         # Convert Pydantic model to JSON
         result_json = result.model_dump_json(indent=2)
@@ -536,6 +545,7 @@ async def analyze_image_deepfake_mcp(context) -> str:
         
         image_data = None
         image_source = None
+        filename = None
         
         if image_path:
             try:
@@ -551,7 +561,8 @@ async def analyze_image_deepfake_mcp(context) -> str:
                 with open(image_path, 'rb') as f:
                     image_data = f.read()
                 
-                image_source = f"local_file:{os.path.basename(image_path)}"
+                filename = os.path.basename(image_path)
+                image_source = f"local_file:{filename}"
                 logging.info(f"Read local file: {len(image_data)} bytes")
             except Exception as e:
                 return json.dumps({
@@ -566,6 +577,7 @@ async def analyze_image_deepfake_mcp(context) -> str:
                     image_data_b64 = image_data_b64.split(',', 1)[1]
                 
                 image_data = base64.b64decode(image_data_b64)
+                filename = "base64_image"
                 image_source = "base64_data"
                 logging.info(f"Decoded base64 image: {len(image_data)} bytes")
             except Exception as e:
@@ -576,10 +588,17 @@ async def analyze_image_deepfake_mcp(context) -> str:
         
         elif image_url:
             try:
+                import os
                 logging.info(f"Downloading image from URL: {image_url}")
                 response = requests.get(image_url, timeout=30)
                 response.raise_for_status()
                 image_data = response.content
+                # Extract filename from URL
+                from urllib.parse import urlparse
+                parsed_url = urlparse(image_url)
+                filename = os.path.basename(parsed_url.path) if parsed_url.path else "downloaded_image"
+                if not filename or filename == '/':
+                    filename = "downloaded_image"
                 image_source = image_url
                 logging.info(f"Downloaded image: {len(image_data)} bytes")
             except requests.RequestException as e:
@@ -624,7 +643,8 @@ async def analyze_image_deepfake_mcp(context) -> str:
             base64_image=image_base64,
             image_path=image_path if image_path else None,
             threshold=threshold,
-            voting_method=voting_method
+            voting_method=voting_method,
+            filename=filename if filename else "unknown_image"
         )
         
         # Convert Pydantic model to dict
@@ -788,8 +808,13 @@ async def analyze_text_deepfake_mcp(context) -> str:
         # Import Agent Framework workflow
         from Agents import run_text_detection_workflow
         
+        # Create a text identifier (truncated text preview)
+        text_identifier = text[:50].replace('\n', ' ').strip()
+        if len(text) > 50:
+            text_identifier += "..."
+        
         # Run Agent Framework concurrent workflow
-        result = await run_text_detection_workflow(text=text)
+        result = await run_text_detection_workflow(text=text, text_identifier=text_identifier)
         
         # Convert Pydantic model to dict
         result_dict = result.model_dump()
