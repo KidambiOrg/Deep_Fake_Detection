@@ -25,7 +25,6 @@ class IndividualModelScore(BaseModel):
 class TextDetectionResult(BaseModel):
     """Ensemble prediction result for text detection"""
     markdown: str = Field(default="", description="Markdown formatted results")
-    textFile: str = Field(default="text_input", description="Identifier or name for the text being analyzed")
     text: str = Field(description="Input text that was analyzed")
     prediction: str = Field(description="Final prediction (AI-generated or human-generated)")
     confidence: float = Field(description="Confidence score (0.0 to 1.0)")

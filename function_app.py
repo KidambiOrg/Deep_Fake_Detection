@@ -317,13 +317,8 @@ async def analyze_text(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Analyzing text (length: {len(text)} chars)")
         
-        # Create a text identifier (truncated text preview)
-        text_identifier = text[:50].replace('\n', ' ').strip()
-        if len(text) > 50:
-            text_identifier += "..."
-        
         # Run Agent Framework concurrent workflow
-        result = await run_text_detection_workflow(text=text, text_identifier=text_identifier)
+        result = await run_text_detection_workflow(text=text)
         
         # Convert Pydantic model to JSON
         result_json = result.model_dump_json(indent=2)
