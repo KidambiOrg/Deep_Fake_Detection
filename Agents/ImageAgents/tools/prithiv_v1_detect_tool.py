@@ -181,15 +181,35 @@ def detect_with_prithiv_v1_tool(image_path: str) -> dict:
             logits = outputs.logits
             probabilities = torch.softmax(logits, dim=1)
             
-            # Model labels: {0: 'Fake', 1: 'Real'} from model registry
-            # probabilities[0][0] = probability of FAKE class
-            # probabilities[0][1] = probability of REAL class
-            fake_prob = probabilities[0][0].item()
-            real_prob = probabilities[0][1].item()
+            # IMPORTANT: Read labels dynamically from model config (matches imagedetectionlib)
+            # Different models may have different label orders!
+            labels = model.config.id2label
+            
+            # Build scores dictionary
+            scores = {labels[i]: float(probabilities[0][i].cpu()) for i in range(len(labels))}
+            
+            # Find fake and real scores by searching for keywords (matches imagedetectionlib logic)
+            fake_prob = 0.0
+            real_prob = 0.0
+            deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic', 'ai']
+            real_indicators = ['real', 'authentic', 'genuine', 'human', 'realism']
+            
+            for label, score in scores.items():
+                label_lower = label.lower()
+                # Check for fake indicators
+                for indicator in deepfake_indicators:
+                    if indicator in label_lower:
+                        fake_prob = score
+                        break
+                # Check for real indicators
+                for indicator in real_indicators:
+                    if indicator in label_lower:
+                        real_prob = score
+                        break
         
         processing_time = time.time() - start_time
         
-        # Determine prediction
+        # Determine prediction based on which score is higher
         is_deepfake = fake_prob > real_prob
         confidence = max(fake_prob, real_prob)
         prediction = 'FAKE' if is_deepfake else 'REAL'

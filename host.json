@@ -9,6 +9,8 @@
     }
   },
   "functionTimeout": "00:30:00",
+  "watchDirectories": [],
+  "watchFiles": [],
   "extensions": {
     "http": {
       "routePrefix": "v1.0",

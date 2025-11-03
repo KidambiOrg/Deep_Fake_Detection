@@ -186,27 +186,26 @@ if st.session_state.image_data is not None:
         
         result = st.session_state.analysis_result
         
-        # Get individual model results
-        images = result.get('images', [])
-        if images:
-            individual_results = images[0].get('individualModelResults', [])
-            
+        # Get individual model results directly from top level (ImageDetectionResult structure)
+        individual_results = result.get('individualModelResults', [])
+        
+        if individual_results and len(individual_results) > 0:
             # Create responsive columns for pie charts
             num_models = len(individual_results)
-            if num_models > 0:
-                # Responsive layout: 4 columns on desktop, auto-wrap on mobile
-                cols_per_row = min(4, num_models)
-                rows = (num_models + cols_per_row - 1) // cols_per_row
-                
-                for row in range(rows):
-                    cols = st.columns(cols_per_row, gap="small")
-                    for col_idx in range(cols_per_row):
-                        model_idx = row * cols_per_row + col_idx
-                        if model_idx < num_models:
-                            with cols[col_idx]:
-                                model_result = individual_results[model_idx]
-                                fig = create_pie_chart(model_result)
-                                st.plotly_chart(fig, use_container_width=True)
+            
+            # Responsive layout: 4 columns on desktop, auto-wrap on mobile
+            cols_per_row = min(4, num_models)
+            rows = (num_models + cols_per_row - 1) // cols_per_row
+            
+            for row in range(rows):
+                cols = st.columns(cols_per_row, gap="small")
+                for col_idx in range(cols_per_row):
+                    model_idx = row * cols_per_row + col_idx
+                    if model_idx < num_models:
+                        with cols[col_idx]:
+                            model_result = individual_results[model_idx]
+                            fig = create_pie_chart(model_result)
+                            st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("No individual model results available")
 else:

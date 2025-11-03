@@ -1,6 +1,21 @@
 import azure.functions as func
 import logging
 import json
+import sys
+import warnings
+
+# Suppress protobuf module cache warnings
+warnings.filterwarnings('ignore')
+
+# Workaround for Azure Functions protobuf namespace package issue
+# Ensure google package is properly initialized as a namespace package
+try:
+    import google
+    if not hasattr(google, '__path__'):
+        import pkgutil
+        google.__path__ = pkgutil.extend_path([], 'google')
+except Exception:
+    pass
 
 # Initialize the Function App
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)

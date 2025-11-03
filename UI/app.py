@@ -65,8 +65,14 @@ analyze_text_page = st.Page(
     icon="📝"
 )
 
+chat_with_image_page = st.Page(
+    "pages/ChatWithImage.py",
+    title="Chat with Image",
+    icon="💬"
+)
+
 # Create navigation
-pg = st.navigation([analyze_image_page, analyze_text_page])
+pg = st.navigation([analyze_image_page, analyze_text_page, chat_with_image_page])
 
 # Run the selected page
 pg.run()

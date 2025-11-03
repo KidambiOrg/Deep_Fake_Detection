@@ -124,8 +124,10 @@ def preprocess_image(image_path: str):
     """
     Preprocess image from file path for NoEscape model.
     Loads image from disk and applies necessary transformations.
+    MUST MATCH imagedetectionlib/detect_deepfake_nonescape.py preprocessing exactly!
     """
     from PIL import ImageFile
+    from torchvision.transforms import v2 as T
     
     # Allow loading truncated images
     ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -142,11 +144,14 @@ def preprocess_image(image_path: str):
     if image.mode != 'RGB':
         image = image.convert('RGB')
     
-    # Define transforms
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    # EXACT transforms from imagedetectionlib (Resize 256 -> CenterCrop 224 -> JPEG compression)
+    transform = T.Compose([
+        T.ToImage(),
+        T.Resize(256),
+        T.CenterCrop(224),
+        T.JPEG(quality=100),
+        T.ToDtype(torch.float32, scale=True),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     
     return transform(image).unsqueeze(0)
