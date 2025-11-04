@@ -156,6 +156,44 @@ def display_detection_result(result):
     
     # Display markdown result
     st.markdown("#### 📊 Analysis Results")
+    
+    # Check if prediction is FAKE and add warning
+    prediction = result.get('prediction', '')
+    confidence = result.get('confidence', 0)
+    
+    if prediction.upper() == "FAKE":
+        confidence_percent = int(confidence * 100)
+        
+        # Determine warning level and styling based on confidence
+        if confidence >= 0.90:
+            # High confidence - Red warning
+            icon = "🛡️"
+            warning_color = "#dc3545"  # Red
+            border_color = "#dc3545"
+        else:
+            # Moderate confidence - Amber/Orange warning
+            icon = "⚠️"
+            warning_color = "#fd7e14"  # Orange
+            border_color = "#fd7e14"
+        
+        # Display warning banner
+        st.markdown(f"""
+        <div style="
+            padding: 15px;
+            border-left: 5px solid {border_color};
+            background-color: rgba(253, 126, 20, 0.1);
+            border-radius: 5px;
+            margin-bottom: 15px;
+        ">
+            <p style="margin: 0; color: {warning_color}; font-weight: bold; font-size: 16px;">
+                {icon} Warning: This image may have been altered.
+            </p>
+            <p style="margin: 5px 0 0 0; color: #333; font-size: 14px;">
+                Our analysis shows a {confidence_percent}% likelihood of manipulation. Please verify the source before using it.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
     markdown_content = result.get('markdown', 'No results available')
     st.markdown(markdown_content)
     
