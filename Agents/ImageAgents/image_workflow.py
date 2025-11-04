@@ -1,8 +1,6 @@
 """Image Detection Workflow using Agent Framework with Ensemble Voting."""
 
-from agent_framework.azure import AzureAIAgentClient
-from azure.identity.aio import AzureCliCredential
-from agent_framework import ConcurrentBuilder
+from agent_framework import ConcurrentBuilder, WorkflowOutputEvent
 from Agents.ImageAgents.image_result_aggregator import create_image_aggregator
 from Agents.ImageAgents.nonescape_agent import create_nonescape_agent
 from Agents.ImageAgents.seresnet50_agent import create_seresnet50_agent
@@ -142,20 +140,19 @@ async def run_image_detection_workflow(
         logger.info("Running concurrent detection workflow...")
         
         # Run the workflow - pass file path reference instead of base64
-        events = await workflow.run(image_path)
+        completion: WorkflowOutputEvent | None = None
+        async for event in workflow.run_stream(image_path):
+            if isinstance(event, WorkflowOutputEvent):
+                completion = event
         
-        # Get the aggregated output from the custom aggregator
-        # The aggregator returns a single ImageDetectionResult, but get_outputs() returns it in a list
-        outputs = events.get_outputs()
-        
-        if not outputs:
-            raise RuntimeError("No outputs returned from workflow")
-        
-        # The aggregator returns ImageDetectionResult directly
-        result = outputs[0]
-        
-        logger.info(f"Workflow completed: {result.prediction} with {result.confidence:.2%} confidence")
-        
+        if completion and completion.data:
+            result = completion.data
+        else:
+            # Return error result if no completion or data
+            raise RuntimeError("Workflow did not produce any output")
+
+        # Ensure result is always an ImageDetectionResult        
+
         return result
         
     except Exception as e:

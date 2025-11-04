@@ -1,8 +1,6 @@
 """Text Detection Workflow using Agent Framework with Ensemble Voting."""
 
-from agent_framework.azure import AzureAIAgentClient
-from azure.identity.aio import AzureCliCredential
-from agent_framework import ConcurrentBuilder
+from agent_framework import ConcurrentBuilder, WorkflowOutputEvent
 from Agents.TextAgents.text_result_aggregator import create_text_aggregator
 from Agents.TextAgents.bert_ml_agent import create_bert_ml_agent
 from Agents.TextAgents.bow_ml_agent import create_bow_ml_agent
@@ -98,18 +96,17 @@ async def run_text_detection_workflow(text: str) -> TextDetectionResult:
         
         logger.info(f"Running concurrent text detection workflow with text: {text[:100]}...")
         
-        # Run the workflow - ConcurrentBuilder handles fan-out/fan-in automatically
-        events = await workflow.run(text)
+        # Run the workflow - pass text to stream
+        completion: WorkflowOutputEvent | None = None
+        async for event in workflow.run_stream(text):
+            if isinstance(event, WorkflowOutputEvent):
+                completion = event
         
-        # Get the aggregated output from the custom aggregator
-        # The aggregator returns a single TextDetectionResult, but get_outputs() returns it in a list
-        outputs = events.get_outputs()
-        
-        if not outputs:
-            raise RuntimeError("No outputs returned from workflow")
-        
-        # The aggregator returns TextDetectionResult directly
-        result = outputs[0]
+        if completion and completion.data:
+            result = completion.data
+        else:
+            # Return error result if no completion or data
+            raise RuntimeError("Workflow did not produce any output")
         
         logger.info(f"Workflow completed: {result.prediction} with {result.confidence:.2%} confidence")
         
