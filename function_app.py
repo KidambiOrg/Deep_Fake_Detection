@@ -60,44 +60,85 @@ def health_check_text(req: func.HttpRequest) -> func.HttpResponse:
 # IMAGE DETECTION ENDPOINTS
 # ============================================================================
 
-@app.route(route="warmupImageModels", methods=["GET"])
-def warmup_image_models(req: func.HttpRequest) -> func.HttpResponse:
-    """Warm up endpoint to pre-load image detection models"""
-    logging.info('Warmup endpoint for image models called - loading models.')
+# @app.route(route="warmupImageModels", methods=["GET"])
+# def warmup_image_models(req: func.HttpRequest) -> func.HttpResponse:
+#     """Warm up endpoint to pre-load image detection models"""
+#     logging.info('Warmup endpoint for image models called - loading models.')
+    
+#     try:
+#         from Services.app_detect_image import get_ensemble_detector
+        
+#         # Try to load the ensemble
+#         ensemble = get_ensemble_detector(debug=True, timeout=600)
+        
+#         if ensemble is not None:
+#             return func.HttpResponse(
+#                 json.dumps({
+#                     "status": "ready",
+#                     "service": "image_detection",
+#                     "message": "Image detection models loaded successfully and ready for analysis"
+#                 }),
+#                 status_code=200,
+#                 mimetype="application/json"
+#             )
+#         else:
+#             return func.HttpResponse(
+#                 json.dumps({
+#                     "status": "loading",
+#                     "service": "image_detection",
+#                     "message": "Image detection models are still loading"
+#                 }),
+#                 status_code=202,
+#                 mimetype="application/json"
+#             )
+#     except Exception as e:
+#         logging.error(f"Error during image model warmup: {str(e)}")
+#         return func.HttpResponse(
+#             json.dumps({
+#                 "status": "error",
+#                 "service": "image_detection",
+#                 "message": f"Error loading image models: {str(e)}"
+#             }),
+#             status_code=500,
+#             mimetype="application/json"
+#         )
+
+
+@app.route(route="preloadImageModels", methods=["GET"])
+async def preload_image_models(req: func.HttpRequest) -> func.HttpResponse:
+    """Preload image detection models from blob storage to cache"""
+    logging.info('Preload endpoint for image models called - downloading from blob storage.')
     
     try:
-        from Services.app_detect_image import get_ensemble_detector
+        from Agents.ImageAgents.predownload_from_blob_agent import run_preload_image_models
         
-        # Try to load the ensemble
-        ensemble = get_ensemble_detector(debug=True, timeout=600)
+        # Run the preload workflow
+        result = await run_preload_image_models()
         
-        if ensemble is not None:
-            return func.HttpResponse(
-                json.dumps({
-                    "status": "ready",
-                    "service": "image_detection",
-                    "message": "Image detection models loaded successfully and ready for analysis"
-                }),
-                status_code=200,
-                mimetype="application/json"
-            )
+        # Determine HTTP status based on result
+        if result['status'] == 'success':
+            status_code = 200
+        elif result['status'] == 'partial':
+            status_code = 207  # Multi-Status
         else:
-            return func.HttpResponse(
-                json.dumps({
-                    "status": "loading",
-                    "service": "image_detection",
-                    "message": "Image detection models are still loading"
-                }),
-                status_code=202,
-                mimetype="application/json"
-            )
+            status_code = 500
+        
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=status_code,
+            mimetype="application/json"
+        )
+        
     except Exception as e:
-        logging.error(f"Error during image model warmup: {str(e)}")
+        logging.error(f"Error during image model preload: {str(e)}")
         return func.HttpResponse(
             json.dumps({
                 "status": "error",
                 "service": "image_detection",
-                "message": f"Error loading image models: {str(e)}"
+                "message": f"Error preloading image models: {str(e)}",
+                "total_models": 0,
+                "successful": 0,
+                "failed": 0
             }),
             status_code=500,
             mimetype="application/json"
@@ -236,44 +277,85 @@ def get_image_models(req: func.HttpRequest) -> func.HttpResponse:
 # TEXT DETECTION ENDPOINTS
 # ============================================================================
 
-@app.route(route="warmupTextModels", methods=["GET"])
-def warmup_text_models(req: func.HttpRequest) -> func.HttpResponse:
-    """Warm up endpoint to pre-load text detection models"""
-    logging.info('Warmup endpoint for text models called - loading models.')
+# @app.route(route="warmupTextModels", methods=["GET"])
+# def warmup_text_models(req: func.HttpRequest) -> func.HttpResponse:
+#     """Warm up endpoint to pre-load text detection models"""
+#     logging.info('Warmup endpoint for text models called - loading models.')
+    
+#     try:
+#         from Services.app_detect_text import get_text_ensemble
+        
+#         # Try to load the text ensemble
+#         ensemble = get_text_ensemble(debug=True, timeout=600)
+        
+#         if ensemble is not None:
+#             return func.HttpResponse(
+#                 json.dumps({
+#                     "status": "ready",
+#                     "service": "text_detection",
+#                     "message": "Text detection models loaded successfully and ready for analysis"
+#                 }),
+#                 status_code=200,
+#                 mimetype="application/json"
+#             )
+#         else:
+#             return func.HttpResponse(
+#                 json.dumps({
+#                     "status": "loading",
+#                     "service": "text_detection",
+#                     "message": "Text detection models are still loading"
+#                 }),
+#                 status_code=202,
+#                 mimetype="application/json"
+#             )
+#     except Exception as e:
+#         logging.error(f"Error during text model warmup: {str(e)}")
+#         return func.HttpResponse(
+#             json.dumps({
+#                 "status": "error",
+#                 "service": "text_detection",
+#                 "message": f"Error loading text models: {str(e)}"
+#             }),
+#             status_code=500,
+#             mimetype="application/json"
+#         )
+
+
+@app.route(route="preloadTextModels", methods=["GET"])
+async def preload_text_models(req: func.HttpRequest) -> func.HttpResponse:
+    """Preload text detection models from blob storage to cache"""
+    logging.info('Preload endpoint for text models called - downloading from blob storage.')
     
     try:
-        from Services.app_detect_text import get_text_ensemble
+        from Agents.TextAgents.predownload_from_blob_agent import run_preload_text_models
         
-        # Try to load the text ensemble
-        ensemble = get_text_ensemble(debug=True, timeout=600)
+        # Run the preload workflow
+        result = await run_preload_text_models()
         
-        if ensemble is not None:
-            return func.HttpResponse(
-                json.dumps({
-                    "status": "ready",
-                    "service": "text_detection",
-                    "message": "Text detection models loaded successfully and ready for analysis"
-                }),
-                status_code=200,
-                mimetype="application/json"
-            )
+        # Determine HTTP status based on result
+        if result['status'] == 'success':
+            status_code = 200
+        elif result['status'] == 'partial':
+            status_code = 207  # Multi-Status
         else:
-            return func.HttpResponse(
-                json.dumps({
-                    "status": "loading",
-                    "service": "text_detection",
-                    "message": "Text detection models are still loading"
-                }),
-                status_code=202,
-                mimetype="application/json"
-            )
+            status_code = 500
+        
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=status_code,
+            mimetype="application/json"
+        )
+        
     except Exception as e:
-        logging.error(f"Error during text model warmup: {str(e)}")
+        logging.error(f"Error during text model preload: {str(e)}")
         return func.HttpResponse(
             json.dumps({
                 "status": "error",
                 "service": "text_detection",
-                "message": f"Error loading text models: {str(e)}"
+                "message": f"Error preloading text models: {str(e)}",
+                "total_models": 0,
+                "successful": 0,
+                "failed": 0
             }),
             status_code=500,
             mimetype="application/json"
