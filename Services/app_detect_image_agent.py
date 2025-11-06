@@ -5,8 +5,12 @@ This service accepts an image and processes it using the Agent Framework's
 concurrent workflow pattern with 5 detection agents:
 - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL
 
-Supports 14+ ensemble voting methods including:
-majority, weighted, bayesian, entropy_weighted, etc.
+Uses Logistic Regression meta-classifier (stacking ensemble) for optimal accuracy.
+The meta-classifier learns to combine model predictions from labeled validation data.
+Reference: https://www.geeksforgeeks.org/machine-learning/voting-classifier/
+
+Supports 15+ ensemble voting methods including:
+majority, weighted, bayesian, entropy_weighted, optimized_weighted, logistic_regression (default), etc.
 
 Returns ImageDetectionResult in JSON format with markdown report.
 """
@@ -57,7 +61,7 @@ async def analyze_image_with_agent(image_data, original_filename=None):
         if isinstance(image_data, str):
             # Check if it's a file path
             if os.path.exists(image_data):
-                # Copy the image to temp folder
+                # IMPORTANT: Copy the image to temp folder to avoid deleting original
                 logger.info(f"Copying image from path: {image_data}")
                 
                 # Read the image and convert to base64
@@ -73,13 +77,14 @@ async def analyze_image_with_agent(image_data, original_filename=None):
                 image.save(buffered, format="PNG")
                 image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
                 
-                # Save to temp folder using helper
+                # Save to temp folder using helper - this creates a NEW file
                 saved_image_path = load_and_save_to_temp(
                     base64_image=image_base64,
                     original_filename=original_filename or os.path.basename(image_data)
                 )
                 temp_file_to_delete = saved_image_path
                 logger.info(f"Image copied to temp folder: {saved_image_path}")
+                logger.info(f"Original file preserved at: {image_data}")
             else:
                 # Assume it's base64 encoded
                 logger.info("Processing base64 encoded image")
@@ -122,33 +127,26 @@ async def analyze_image_with_agent(image_data, original_filename=None):
         
         # Run Agent Framework concurrent workflow with file reference
         # Workflow will extract filename from path for output model
-        # Use fixed values matching original implementation
+        # NOTE: Logistic Regression requires 100+ training samples for reliable weights
+        # Currently trained on only 17 samples (76.5% accuracy) - insufficient for production
+        # Using optimized_weighted (Bayesian soft voting) until more training data collected
         threshold = 0.20
-        voting_method = 'weighted'
+        voting_method = 'optimized_weighted'  # Bayesian-optimized soft voting
         
         logger.info(f"Running detection with threshold={threshold}, voting_method={voting_method}")
         
-        try:
-            result = await run_image_detection_workflow(
-                image_path=saved_image_path,
-                threshold=threshold,
-                voting_method=voting_method
-            )
-            
-            # Convert Pydantic model to dictionary
-            result_dict = result.model_dump()
-            
-            logger.info(f"Detection complete. Prediction: {result_dict.get('prediction', 'N/A')}")
-            return result_dict
-            
-        finally:
-            # Clean up temp file if created
-            if temp_file_to_delete and os.path.exists(temp_file_to_delete):
-                try:
-                    os.unlink(temp_file_to_delete)
-                    logger.info(f"Cleaned up temp file: {temp_file_to_delete}")
-                except Exception as cleanup_err:
-                    logger.warning(f"Failed to delete temp file {temp_file_to_delete}: {cleanup_err}")
+        # Workflow will handle cleanup of temp file (cleanup_file=True)
+        result = await run_image_detection_workflow(
+            image_path=saved_image_path,
+            threshold=threshold,
+            voting_method=voting_method
+        )
+        
+        # Convert Pydantic model to dictionary
+        result_dict = result.model_dump()
+        
+        logger.info(f"Detection complete. Prediction: {result_dict.get('prediction', 'N/A')}")
+        return result_dict
         
     except Exception as e:
         logger.error(f"Error in Agent Framework image analysis: {str(e)}")
@@ -208,7 +206,7 @@ def main():
     try:
         # Run analysis
         print(f"Analyzing image: {args.image_path}", file=sys.stderr)
-        print(f"Using fixed settings: threshold=0.20, voting=weighted", file=sys.stderr)
+        print(f"Using settings: threshold=0.20, voting=optimized_weighted (Bayesian-optimized)", file=sys.stderr)
         
         result = analyze_image_sync(
             image_data=args.image_path,

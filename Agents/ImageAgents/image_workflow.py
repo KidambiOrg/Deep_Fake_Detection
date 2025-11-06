@@ -73,7 +73,7 @@ def get_or_create_agents():
 async def run_image_detection_workflow(
     image_path: str,
     threshold: float = 0.20,
-    voting_method: str = 'weighted'
+    voting_method: str = 'optimized_weighted'
 ) -> ImageDetectionResult:
     """
     Run concurrent image detection workflow using Agent Framework.
@@ -93,6 +93,7 @@ async def run_image_detection_workflow(
     - bayesian: Bayesian inference to combine predictions
     - entropy_weighted: Weight based on prediction entropy
     - consensus_threshold: Adaptive threshold based on consensus
+    - optimized_weighted: Bayesian-optimized soft voting (RECOMMENDED for AI-generated content)
     
     Args:
         image_path: Path to image file (required)

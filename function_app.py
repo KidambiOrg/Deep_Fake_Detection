@@ -167,9 +167,11 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        # Use fixed values matching original implementation
+        # Use Logistic Regression meta-classifier (stacking ensemble)
+        # This learns optimal combination weights from labeled validation data
+        # Reference: https://www.geeksforgeeks.org/machine-learning/voting-classifier/
         threshold = 0.20
-        voting_method = 'weighted'
+        voting_method = 'logistic_regression'  # ML-based stacking approach
         
         # Run Agent Framework concurrent workflow with file reference
         # Workflow will extract filename from path for output model

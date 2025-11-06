@@ -12,6 +12,11 @@ from outputModel.image_detection_output_model import (
     IndividualModelResult,
     VotingResult
 )
+from utils.bayesian_weight_optimizer import (
+    apply_weighted_soft_voting,
+    get_optimized_weights
+)
+from utils.logistic_regression_voter import apply_logistic_regression_voting
 
 logger = logging.getLogger(__name__)
 
@@ -192,16 +197,41 @@ def apply_ensemble_voting(
             confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
     
     elif voting_method == 'weighted':
-        is_deepfake = avg_fake_score > avg_real_score
+        # Enhanced weighted voting: Weight by confidence AND actual scores
+        # Each model contributes its fake/real scores weighted by its confidence
+        weighted_fake_sum = 0.0
+        weighted_real_sum = 0.0
+        total_weight = 0.0
+        
+        for i, result in enumerate(individual_results):
+            # Use the model's confidence as the weight
+            weight = result.confidence
+            
+            # Weight the actual fake/real scores by confidence
+            weighted_fake_sum += fake_scores[i] * weight
+            weighted_real_sum += real_scores[i] * weight
+            
+            total_weight += weight
+        
+        # Calculate confidence-weighted averages
+        if total_weight > 0:
+            weighted_avg_fake = weighted_fake_sum / total_weight
+            weighted_avg_real = weighted_real_sum / total_weight
+        else:
+            weighted_avg_fake = avg_fake_score
+            weighted_avg_real = avg_real_score
+        
+        # Make prediction based on which weighted average is higher
+        is_deepfake = weighted_avg_fake > weighted_avg_real
         
         if is_deepfake:
             fake_model_scores = [fake_scores[i] for i in range(len(individual_results)) 
                                 if individual_results[i].prediction == 'FAKE']
-            confidence = np.mean(fake_model_scores) if fake_model_scores else avg_fake_score
+            confidence = np.mean(fake_model_scores) if fake_model_scores else weighted_avg_fake
         else:
             real_model_scores = [real_scores[i] for i in range(len(individual_results)) 
                                 if individual_results[i].prediction == 'REAL']
-            confidence = np.mean(real_model_scores) if real_model_scores else avg_real_score
+            confidence = np.mean(real_model_scores) if real_model_scores else weighted_avg_real
     
     elif voting_method == 'unanimous':
         is_deepfake = fake_votes == len(individual_results)
@@ -297,11 +327,11 @@ def apply_ensemble_voting(
     
     elif voting_method == 'reliability_weighted':
         model_weights = {
-            'nonescape-full': 0.92,
-            'seresnet50': 0.80,
-            'prithiv-v1': 0.75,
-            'dima-vit': 0.85,
-            'organika-sdxl': 0.70
+            'nonescape-full': 0.95,  # Increased: Best for AI-generated content like DALL-E
+            'seresnet50': 0.82,      # Increased: Good general detector
+            'prithiv-v1': 0.72,      # Decreased: Lower reliability
+            'dima-vit': 0.78,        # Decreased: Can miss AI-generated content
+            'organika-sdxl': 0.68    # Decreased: Can miss AI-generated content
         }
         
         weighted_fake_votes = 0.0
@@ -388,6 +418,49 @@ def apply_ensemble_voting(
         
         is_deepfake = avg_fake_score >= adjusted_threshold
         confidence = avg_fake_score if is_deepfake else avg_real_score
+    
+    elif voting_method == 'optimized_weighted':
+        # Weighted soft voting with Bayesian-optimized model weights
+        # Uses pre-computed optimal weights learned from validation data
+        # Combines probability scores with adaptive confidence weighting
+        
+        # Get optimized weights for all models
+        optimized_weights = get_optimized_weights()
+        
+        # Apply weighted soft voting with adaptive weighting
+        is_deepfake, confidence = apply_weighted_soft_voting(
+            individual_results=[
+                {
+                    'model': r.model,
+                    'fakeScore': r.fakeScore,
+                    'realScore': r.realScore,
+                    'confidence': r.confidence
+                }
+                for r in individual_results
+            ],
+            weights=optimized_weights,
+            adaptive=True  # Enable adaptive weighting based on uncertainty
+        )
+    
+    elif voting_method == 'logistic_regression':
+        # Logistic Regression meta-classifier (stacking approach)
+        # Trains a meta-model to learn optimal combination of base models
+        # Based on sklearn VotingClassifier approach
+        # Reference: https://www.geeksforgeeks.org/machine-learning/voting-classifier/
+        
+        prediction, confidence, avg_fake, avg_real = apply_logistic_regression_voting(
+            results=[
+                {
+                    'model': r.model,
+                    'fakeScore': r.fakeScore,
+                    'realScore': r.realScore,
+                    'confidence': r.confidence
+                }
+                for r in individual_results
+            ]
+        )
+        
+        is_deepfake = (prediction == 'FAKE')
     
     else:
         raise ValueError(f"Unknown voting method: {voting_method}")
