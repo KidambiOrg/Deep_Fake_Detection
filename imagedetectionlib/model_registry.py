@@ -85,6 +85,23 @@ MODEL_REGISTRY = {
         }
     },
     
+    # MobileNetV2 Models
+    'mobilenetv2': {
+        'name': 'MobileNetV2 Fine-tuned',
+        'display_name': 'MobileNetV2 Detector',
+        'description': 'Lightweight MobileNetV2 fine-tuned for deepfake detection',
+        'architecture': 'MobileNetV2',
+        'source': 'mobilenetv2',
+        'model_type': 'finetuned',
+        'model_path': 'Models/MobileNetV2_FineTuned/mobilenetv2_deepfake_model.keras',
+        'recommended_threshold': 0.5,
+        'local_path': 'Models/MobileNetV2_FineTuned',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'MobileNetV2_FineTuned'
+        }
+    },
+    
     
   
 }

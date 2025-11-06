@@ -3,7 +3,7 @@ transformers
 numpy
 torchaudio
 sentencepiece
-protobuf>=5.0,<5.28
+protobuf==5.27.2
 Pillow
 torchvision
 scipy

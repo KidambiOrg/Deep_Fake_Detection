@@ -176,12 +176,23 @@ def apply_ensemble_voting(
         'total': len(individual_results)
     }
     
-    # Extract scores
-    fake_scores = [r.fakeScore for r in individual_results]
-    real_scores = [r.realScore for r in individual_results]
+    # Extract scores - ONLY from models that returned valid predictions
+    # Exclude models with zero confidence (indicates error or no prediction)
+    valid_results = [r for r in individual_results if r.confidence > 0.0]
     
-    avg_fake_score = sum(fake_scores) / len(fake_scores) if fake_scores else 0.0
-    avg_real_score = sum(real_scores) / len(real_scores) if real_scores else 0.0
+    if valid_results:
+        fake_scores = [r.fakeScore for r in valid_results]
+        real_scores = [r.realScore for r in valid_results]
+        
+        avg_fake_score = sum(fake_scores) / len(fake_scores)
+        avg_real_score = sum(real_scores) / len(real_scores)
+    else:
+        # Fallback if all models failed
+        fake_scores = [r.fakeScore for r in individual_results]
+        real_scores = [r.realScore for r in individual_results]
+        
+        avg_fake_score = sum(fake_scores) / len(fake_scores) if fake_scores else 0.0
+        avg_real_score = sum(real_scores) / len(real_scores) if real_scores else 0.0
     
     # Determine final prediction based on voting method
     if voting_method == 'majority':
