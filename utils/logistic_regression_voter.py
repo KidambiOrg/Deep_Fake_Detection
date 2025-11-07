@@ -33,49 +33,114 @@ class LogisticRegressionVoter:
         is_trained: Whether the meta-classifier has been trained
     """
     
-    def __init__(self):
-        """Initialize the Logistic Regression voter."""
-        self.model = LogisticRegression(
-            random_state=42,
-            max_iter=1000,
-            class_weight='balanced',  # Handle imbalanced data
-            solver='lbfgs'
-        )
+    def __init__(self, use_tuning=False):
+        """
+        Initialize the Logistic Regression voter.
+        
+        Args:
+            use_tuning: If True, uses optimized hyperparameters from grid search
+        """
+        if use_tuning:
+            # Optimized hyperparameters (can be tuned via GridSearchCV)
+            self.model = LogisticRegression(
+                random_state=42,
+                max_iter=2000,
+                class_weight='balanced',
+                solver='saga',  # Better for large datasets
+                penalty='l1',   # L1 regularization for feature selection
+                C=0.5,          # Regularization strength
+                tol=1e-4
+            )
+        else:
+            # Default configuration
+            self.model = LogisticRegression(
+                random_state=42,
+                max_iter=1000,
+                class_weight='balanced',
+                solver='lbfgs'
+            )
         self.scaler = StandardScaler()
+        # Model order for 6 models (12 features) - mobilenetv2-cnn ignored
         self.model_order = ['nonescape-full', 'seresnet50', 'prithiv-v1', 
-                           'dima-vit', 'organika-sdxl']
+                           'dima-vit', 'organika-sdxl', 'mobilenetv2']
         self.is_trained = False
     
     def _extract_features(self, results: List[Dict]) -> np.ndarray:
         """
         Extract features from model results for LR input.
         
-        Creates feature vector with 10 features per image:
-        - 5 fake scores (one per model)
-        - 5 real scores (one per model)
+        Creates feature vector with features per image based on model_order:
+        - N fake scores (one per model in model_order)
+        - N real scores (one per model in model_order)
+        - Additional engineered features for better classification
+        
+        If a model in model_order is missing from results, uses default 0.5 for both scores.
         
         Args:
             results: List of detection results from base models
             
         Returns:
-            Feature array of shape (n_samples, 10)
+            Feature array of shape (n_samples, features)
         """
-        features = []
-        
+        # Create lookup dictionary from results
+        result_dict = {}
         for result in results:
             model_name = result.get('model', '')
-            fake_score = result.get('fakeScore', 0.5)
-            real_score = result.get('realScore', 0.5)
+            if model_name:
+                result_dict[model_name] = {
+                    'fake': result.get('fakeScore', 0.5),
+                    'real': result.get('realScore', 0.5),
+                    'confidence': result.get('confidence', 0.5)
+                }
+        
+        # Extract base features in the exact order expected by the trained model
+        features = []
+        confidences = []
+        fake_scores = []
+        real_scores = []
+        
+        for model_name in self.model_order:
+            if model_name in result_dict:
+                fake = result_dict[model_name]['fake']
+                real = result_dict[model_name]['real']
+                conf = result_dict[model_name]['confidence']
+                
+                features.extend([fake, real])
+                fake_scores.append(fake)
+                real_scores.append(real)
+                confidences.append(conf)
+            else:
+                # Model not present - use neutral scores (0.5, 0.5)
+                features.extend([0.5, 0.5])
+                fake_scores.append(0.5)
+                real_scores.append(0.5)
+                confidences.append(0.5)
+        
+        # Add engineered features for better discrimination
+        # These help the LR model learn more complex patterns
+        if fake_scores and real_scores:
+            # Statistical features
+            features.append(np.mean(fake_scores))  # Average fake score
+            features.append(np.std(fake_scores))   # Variance in fake scores (agreement)
+            features.append(np.max(fake_scores))   # Max fake score
+            features.append(np.min(fake_scores))   # Min fake score
+            features.append(np.mean(confidences))  # Average confidence
             
-            # Store in consistent order
-            if model_name in self.model_order:
-                features.extend([fake_score, real_score])
+            # Agreement features
+            features.append(np.std(confidences))   # Model agreement/disagreement
+            features.append(max(fake_scores) - min(fake_scores))  # Fake score range
+            
+            # Ratio features
+            avg_fake = np.mean(fake_scores)
+            avg_real = np.mean(real_scores)
+            features.append(avg_fake / (avg_real + 1e-10))  # Fake/Real ratio
         
         return np.array(features).reshape(1, -1)
     
     def train(self, 
               training_data: List[Tuple[List[Dict], bool]],
-              save_path: Optional[str] = None) -> Dict[str, float]:
+              save_path: Optional[str] = None,
+              use_cross_validation: bool = True) -> Dict[str, float]:
         """
         Train the Logistic Regression meta-classifier.
         
@@ -84,9 +149,10 @@ class LogisticRegressionVoter:
                 - results: List of model detection results
                 - is_fake: Ground truth label (True=fake, False=real)
             save_path: Optional path to save trained model
+            use_cross_validation: If True, performs 5-fold CV for better evaluation
             
         Returns:
-            Training metrics (accuracy, precision, recall)
+            Training metrics (accuracy, precision, recall, cv_score if enabled)
         """
         X_train = []
         y_train = []
@@ -103,7 +169,15 @@ class LogisticRegressionVoter:
         # Normalize features
         X_train_scaled = self.scaler.fit_transform(X_train)
         
-        # Train the model
+        # Perform cross-validation before final training
+        cv_score = None
+        if use_cross_validation and len(y_train) >= 10:
+            from sklearn.model_selection import cross_val_score
+            cv_scores = cross_val_score(self.model, X_train_scaled, y_train, cv=5, scoring='accuracy')
+            cv_score = cv_scores.mean()
+            print(f"Cross-validation accuracy: {cv_score:.2%} (+/- {cv_scores.std() * 2:.2%})")
+        
+        # Train the model on full dataset
         self.model.fit(X_train_scaled, y_train)
         self.is_trained = True
         
@@ -127,6 +201,9 @@ class LogisticRegressionVoter:
             'n_fake': np.sum(y_train),
             'n_real': len(y_train) - np.sum(y_train)
         }
+        
+        if cv_score is not None:
+            metrics['cv_accuracy'] = cv_score
         
         # Save model if path provided
         if save_path:
@@ -249,18 +326,35 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
     voter = get_lr_voter()
     
     if not voter.is_trained:
-        # Fallback to simple averaging if not trained
-        print("Warning: LR voter not trained. Using simple average as fallback.")
-        fake_scores = [r.get('fakeScore', 0.5) for r in results]
-        real_scores = [r.get('realScore', 0.5) for r in results]
+        # Fallback to Bayesian inference if not trained
+        print("Warning: LR voter not trained. Using Bayesian inference as fallback.")
         
-        avg_fake = np.mean(fake_scores)
-        avg_real = np.mean(real_scores)
+        prior_fake = 0.5
+        log_likelihood_fake = 0.0
+        log_likelihood_real = 0.0
         
-        prediction = 'FAKE' if avg_fake > avg_real else 'REAL'
-        confidence = max(avg_fake, avg_real)
+        for result in results:
+            fake_score = result.get('fakeScore', 0.5)
+            real_score = result.get('realScore', 0.5)
+            
+            log_likelihood_fake += np.log(fake_score + 1e-10)
+            log_likelihood_real += np.log(real_score + 1e-10)
         
-        return prediction, confidence, avg_fake, avg_real
+        likelihood_fake = np.exp(log_likelihood_fake)
+        likelihood_real = np.exp(log_likelihood_real)
+        
+        evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
+        if evidence > 0:
+            posterior_fake = (likelihood_fake * prior_fake) / evidence
+            posterior_real = (likelihood_real * (1 - prior_fake)) / evidence
+        else:
+            posterior_fake = prior_fake
+            posterior_real = 1 - prior_fake
+        
+        prediction = 'FAKE' if posterior_fake > posterior_real else 'REAL'
+        confidence = max(posterior_fake, posterior_real)
+        
+        return prediction, confidence, posterior_fake, posterior_real
     
     # Use trained LR model
     is_fake, confidence, details = voter.predict(results)

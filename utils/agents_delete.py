@@ -27,10 +27,10 @@ def delete_all_agents(project_client: AIProjectClient) -> None:
         return
     
     print(f"Found {len(agents_list)} agent(s) to delete.")
-    
+    print (f"Deleting {len(agents_list)} agent(s)...")
     for agent in agents_list:
         try:
-            print(f"Deleting agent: {agent.id} ({agent.name})")
+            
             project_client.agents.delete_agent(agent.id)
         except Exception as e:
             print(f"Warning: Could not delete agent {agent.id}: {e}")
@@ -52,11 +52,10 @@ def delete_all_threads(project_client: AIProjectClient) -> None:
         return
     
     print(f"Found {len(threads)} thread(s) to delete.")
-    
+    print (f"Deleting {len(threads)} thread(s)...")
     for th in threads:
         try:
-            name = getattr(th, "name", None) or ""
-            print(f"Deleting thread: {th.id} {f'({name})' if name else ''}")
+            
             project_client.agents.threads.delete(th.id)
         except Exception as e:
             print(f"Warning: Could not delete thread {th.id}: {e}")

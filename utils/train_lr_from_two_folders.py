@@ -20,7 +20,7 @@ from typing import List, Tuple, Dict
 import time
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.logistic_regression_voter import LogisticRegressionVoter
 from Agents import run_image_detection_workflow
@@ -180,12 +180,12 @@ async def main():
     print("Training Logistic Regression Meta-Classifier from Fake/Real Folders")
     print("="*80)
     
-    fake_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\real-vs-fake\test\fake"
-    real_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\real-vs-fake\test\real"
-    
-    # Process 100 images per class (200 total) for good training data
+    fake_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\testthresholdvoting\fake"
+    real_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\testthresholdvoting\real"
+
+    # Process 100 images per class (500 total) for good training data
     # This balances training time (~4-5 hours) with having enough samples
-    max_images_per_class = 100
+    max_images_per_class = 500
     
     # Step 1: Collect training data
     print("\n1. Collecting training data from folders...")
@@ -216,7 +216,7 @@ async def main():
     print("\n2. Training Logistic Regression meta-classifier...")
     voter = LogisticRegressionVoter()
     
-    save_path = Path(__file__).parent / 'Models' / 'lr_meta_classifier.pkl'
+    save_path = Path(__file__).parent.parent / 'Models' / 'lr_meta_classifier.pkl'
     metrics = voter.train(training_data, save_path=str(save_path))
     
     # Step 3: Show results

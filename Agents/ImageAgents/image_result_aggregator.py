@@ -377,13 +377,14 @@ def apply_ensemble_voting(
         log_likelihood_real = 0.0
         
         for result in individual_results:
-            model_confidence = result.confidence
-            if result.prediction == 'FAKE':
-                log_likelihood_fake += np.log(model_confidence + 1e-10)
-                log_likelihood_real += np.log(1 - model_confidence + 1e-10)
-            else:
-                log_likelihood_fake += np.log(1 - model_confidence + 1e-10)
-                log_likelihood_real += np.log(model_confidence + 1e-10)
+            # Use actual fake and real scores, not the confidence value
+            fake_score = result.fakeScore
+            real_score = result.realScore
+            
+            # Add log probabilities for Bayesian inference
+            # Each model provides P(prediction|fake) and P(prediction|real)
+            log_likelihood_fake += np.log(fake_score + 1e-10)
+            log_likelihood_real += np.log(real_score + 1e-10)
         
         likelihood_fake = np.exp(log_likelihood_fake)
         likelihood_real = np.exp(log_likelihood_real)
@@ -391,11 +392,14 @@ def apply_ensemble_voting(
         evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
         if evidence > 0:
             posterior_fake = (likelihood_fake * prior_fake) / evidence
+            posterior_real = (likelihood_real * (1 - prior_fake)) / evidence
         else:
             posterior_fake = prior_fake
+            posterior_real = 1 - prior_fake
         
         is_deepfake = posterior_fake >= threshold
-        confidence = posterior_fake
+        # Confidence should be the higher posterior probability
+        confidence = max(posterior_fake, posterior_real)
     
     elif voting_method == 'entropy_weighted':
         weighted_fake_sum = 0.0

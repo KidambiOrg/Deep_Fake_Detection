@@ -3,9 +3,20 @@ import logging
 import json
 import sys
 import warnings
+import asyncio
 
 # Suppress protobuf module cache warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+
+# Suppress aiohttp ResourceWarning about unclosed sessions
+# These are managed by the Azure SDK and will be cleaned up
+warnings.filterwarnings('ignore', category=ResourceWarning, message='unclosed.*<ssl.SSLSocket.*')
+warnings.filterwarnings('ignore', category=ResourceWarning, message='unclosed.*<TCPTransport.*')
+warnings.filterwarnings('ignore', category=ResourceWarning, message='unclosed.*<aiohttp.*')
+
+# Suppress asyncio warnings about destroyed tasks
+warnings.filterwarnings('ignore', message='.*Task.*was destroyed.*')
 
 # Workaround for Azure Functions protobuf namespace package issue
 # Ensure google package is properly initialized as a namespace package
@@ -16,6 +27,13 @@ try:
         google.__path__ = pkgutil.extend_path([], 'google')
 except Exception:
     pass
+
+# Configure logging to reduce noise from Azure SDK
+logging.getLogger('azure').setLevel(logging.WARNING)
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
+logging.getLogger('azure.core.pipeline.transport').setLevel(logging.WARNING)
+logging.getLogger('aiohttp').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.ERROR)  # Only show errors from asyncio
 
 # Initialize the Function App
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -107,8 +125,8 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
     """
     Analyze an image for deepfake detection using Agent Framework workflows.
     
-    Uses concurrent workflow pattern with 5 detection agents:
-    - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL
+    Uses concurrent workflow pattern with 7 detection agents:
+    - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL, MobileNetV2, MobileNetV2-CNN
     
     Supports 14+ ensemble voting methods including:
     majority, weighted, bayesian, entropy_weighted, etc.
@@ -120,25 +138,81 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
         from Agents import run_image_detection_workflow
         from utils.image_file_helper import load_and_save_to_temp
         import base64
+        import binascii
         import io
         from PIL import Image
         
-        # Get the uploaded image file
+        image_data = None
+        original_filename = "uploaded_image"
+        
+        # Check content type to determine how to parse the request
+        content_type = req.headers.get('Content-Type', '').lower()
+        logging.info(f"Request Content-Type: {content_type}")
+        
+        # Try to get image from req.files first (standard multipart file upload)
         image_file = req.files.get('image')
         
-        if not image_file:
+        if image_file:
+            # Handle standard multipart file upload (from tools like Postman, curl, etc.)
+            original_filename = image_file.filename if image_file.filename else "uploaded_image"
+            image_data = image_file.read()
+            logging.info(f"Received image from req.files: {original_filename}, size: {len(image_data)} bytes")
+        
+        # Try JSON body with imageUrl (base64 data URL) or base64 image
+        if not image_data:
+            try:
+                req_body = req.get_json()
+                
+                if isinstance(req_body, dict):
+                    # Check for imageUrl field (base64 data URL format)
+                    if 'imageUrl' in req_body:
+                        image_url = req_body['imageUrl']
+                        logging.info(f"Processing imageUrl field (base64 data URL)")
+                        
+                        # Handle data URL format: data:image/jpeg;base64,/9j/4AAQ...
+                        if isinstance(image_url, str):
+                            # Remove data URI prefix if present
+                            if ',' in image_url:
+                                base64_data = image_url.split(',', 1)[1]
+                            else:
+                                base64_data = image_url
+                            
+                            image_data = base64.b64decode(base64_data)
+                            logging.info(f"Decoded image from base64 data URL, size: {len(image_data)} bytes")
+                    
+                    # Check for base64 image data (alternative field name)
+                    elif 'image' in req_body:
+                        base64_data = req_body['image']
+                        # Remove data URI prefix if present
+                        if isinstance(base64_data, str) and ',' in base64_data:
+                            base64_data = base64_data.split(',', 1)[1]
+                        image_data = base64.b64decode(base64_data)
+                        logging.info(f"Received image from JSON body (base64), size: {len(image_data)} bytes")
+                    
+            except (ValueError, binascii.Error) as decode_err:
+                logging.error(f"Failed to decode base64 image: {decode_err}")
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": "Failed to decode base64 image",
+                        "details": str(decode_err)
+                    }),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            except Exception as json_err:
+                logging.warning(f"Failed to parse JSON from body: {json_err}")
+        
+        # Final check
+        if not image_data:
             return func.HttpResponse(
-                json.dumps({"error": "Please provide an image file with key 'image'."}),
+                json.dumps({
+                    "error": "Please provide an image file with key 'image' or 'imageUrl' in JSON body.",
+                    "details": "Supported formats: multipart/form-data file upload, JSON body with 'imageUrl' (base64 data URL), or JSON body with base64 'image'",
+                    "received_content_type": content_type
+                }),
                 status_code=400,
                 mimetype="application/json"
             )
-        
-        # Extract original filename
-        original_filename = image_file.filename if image_file.filename else "uploaded_image"
-        
-    
-        image_data = image_file.read()
-        logging.info(f"Received image: {original_filename}, size: {len(image_data)} bytes")
         
         # Load, validate, and save the image with unique filename
         try:
@@ -167,11 +241,12 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        # Use Logistic Regression meta-classifier (stacking ensemble)
-        # This learns optimal combination weights from labeled validation data
-        # Reference: https://www.geeksforgeeks.org/machine-learning/voting-classifier/
+        # Use Logistic Regression meta-classifier voting
+        # This uses a trained LR model from Models/lr_meta_classifier.pkl
+        # The meta-classifier learns optimal combination weights from training data
         threshold = 0.20
-        voting_method = 'logistic_regression'  # ML-based stacking approach
+        voting_method = 'logistic_regression'  # LR meta-classifier ensemble
+       
         
         # Run Agent Framework concurrent workflow with file reference
         # Workflow will extract filename from path for output model

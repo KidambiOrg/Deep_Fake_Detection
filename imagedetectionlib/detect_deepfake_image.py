@@ -1481,16 +1481,15 @@ class EnsembleDetector:
             log_likelihood_fake = 0.0
             log_likelihood_real = 0.0
             
-            for result in individual_results:
-                model_confidence = result.confidence
-                if result.is_deepfake:
-                    # Model predicts fake
-                    log_likelihood_fake += np.log(model_confidence + 1e-10)
-                    log_likelihood_real += np.log(1 - model_confidence + 1e-10)
-                else:
-                    # Model predicts real
-                    log_likelihood_fake += np.log(1 - model_confidence + 1e-10)
-                    log_likelihood_real += np.log(model_confidence + 1e-10)
+            for i, result in enumerate(individual_results):
+                # Use actual fake and real scores, not the confidence value
+                fake_score = fake_scores[i] if i < len(fake_scores) else 0.0
+                real_score = real_scores[i] if i < len(real_scores) else 0.0
+                
+                # Add log probabilities for Bayesian inference
+                # Each model provides P(prediction|fake) and P(prediction|real)
+                log_likelihood_fake += np.log(fake_score + 1e-10)
+                log_likelihood_real += np.log(real_score + 1e-10)
             
             # Convert back from log space for numerical stability
             likelihood_fake = np.exp(log_likelihood_fake)
@@ -1500,11 +1499,14 @@ class EnsembleDetector:
             evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
             if evidence > 0:
                 posterior_fake = (likelihood_fake * prior_fake) / evidence
+                posterior_real = (likelihood_real * (1 - prior_fake)) / evidence
             else:
                 posterior_fake = prior_fake
+                posterior_real = 1 - prior_fake
             
             is_deepfake = posterior_fake >= threshold
-            confidence = posterior_fake
+            # Confidence should be the higher posterior probability
+            confidence = max(posterior_fake, posterior_real)
         
         elif voting_method == 'entropy_weighted':
             # Weight based on prediction entropy (uncertainty)

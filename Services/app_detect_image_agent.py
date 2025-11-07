@@ -127,11 +127,10 @@ async def analyze_image_with_agent(image_data, original_filename=None):
         
         # Run Agent Framework concurrent workflow with file reference
         # Workflow will extract filename from path for output model
-        # NOTE: Logistic Regression requires 100+ training samples for reliable weights
-        # Currently trained on only 17 samples (76.5% accuracy) - insufficient for production
-        # Using optimized_weighted (Bayesian soft voting) until more training data collected
+        # Using Logistic Regression meta-classifier with trained model from Models/lr_meta_classifier.pkl
+        # The meta-classifier learns optimal combination weights from training data
         threshold = 0.20
-        voting_method = 'optimized_weighted'  # Bayesian-optimized soft voting
+        voting_method = 'logistic_regression'  # LR meta-classifier ensemble
         
         logger.info(f"Running detection with threshold={threshold}, voting_method={voting_method}")
         

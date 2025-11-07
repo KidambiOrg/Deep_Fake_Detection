@@ -230,12 +230,12 @@ class MobileNetV2Detector:
                 prediction = self.model.predict(img_batch, verbose=0)[0]
             
             # Handle both binary output formats:
-            # IMPORTANT: MobileNetV2 model was trained with [0=FAKE, 1=REAL] convention
-            # So output closer to 1.0 means REAL, closer to 0.0 means FAKE (REVERSED from typical)
+            # Based on reference implementation: https://github.com/Gopika-2025/Deep_fake_detection
+            # Model output is [prob_real, prob_fake] where index 0=REAL, index 1=FAKE
             if len(prediction.shape) == 0 or prediction.shape[0] == 1:
-                # Single output: probability of REAL (reversed from typical convention)
-                real_prob = float(prediction) if len(prediction.shape) == 0 else float(prediction[0])
-                fake_prob = 1.0 - real_prob
+                # Single output: probability of FAKE (typical binary classification)
+                fake_prob = float(prediction) if len(prediction.shape) == 0 else float(prediction[0])
+                real_prob = 1.0 - fake_prob
             else:
                 # Two outputs: [prob_real, prob_fake]
                 real_prob = float(prediction[0])

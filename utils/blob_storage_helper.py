@@ -221,7 +221,9 @@ class BlobStorageModelLoader:
         
         try:
             # Create local directory based on prefix
-            local_dir = self.cache_dir / container_name / blob_prefix
+            # BUGFIX: Convert blob prefix forward slashes to OS path separator for Windows compatibility
+            blob_prefix_normalized = blob_prefix.replace('/', os.sep)
+            local_dir = self.cache_dir / container_name / blob_prefix_normalized
             
             # Check if directory already exists and has files (cache hit)
             if local_dir.exists() and any(local_dir.iterdir()) and not force_download:
@@ -240,26 +242,63 @@ class BlobStorageModelLoader:
             downloaded_count = 0
             
             for blob in blob_list:
-                # Get relative path within the prefix
-                relative_path = blob.name[len(blob_prefix):].lstrip('/')
-                local_file_path = local_dir / relative_path
-                
-                # Skip if already cached and not forcing download
-                if local_file_path.exists() and not force_download:
-                    logger.debug(f"Using cached file: {local_file_path}")
-                    continue
-                
-                # Create subdirectories if needed
-                local_file_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Download blob
-                blob_client = container_client.get_blob_client(blob.name)
-                with open(local_file_path, "wb") as download_file:
-                    download_stream = blob_client.download_blob()
-                    download_file.write(download_stream.readall())
-                
-                downloaded_count += 1
-                logger.debug(f"Downloaded: {blob.name}")
+                try:
+                    # Get relative path within the prefix
+                    relative_path = blob.name[len(blob_prefix):].lstrip('/')
+                    
+                    # BUGFIX: Replace forward slashes with OS-appropriate path separator
+                    # Convert blob path separators to Windows path separators
+                    relative_path = relative_path.replace('/', os.sep)
+                    
+                    local_file_path = local_dir / relative_path
+                    
+                    logger.info(f"Processing blob: {blob.name}")
+                    logger.info(f"Relative path: {relative_path}")
+                    logger.info(f"Local file path: {local_file_path}")
+                    
+                    # Skip if already cached and not forcing download
+                    if local_file_path.exists() and not force_download:
+                        logger.debug(f"Using cached file: {local_file_path}")
+                        continue
+                    
+                    # Create subdirectories if needed
+                    local_file_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Download blob
+                    blob_client = container_client.get_blob_client(blob.name)
+                    
+                    # BUGFIX: Download to temp file first, then move to avoid file locking issues
+                    import tempfile
+                    import shutil
+                    
+                    local_file_str = str(local_file_path)
+                    logger.info(f"Downloading to: {local_file_str}")
+                    
+                    # Create temp file in same directory to ensure same filesystem
+                    temp_fd, temp_path = tempfile.mkstemp(dir=str(local_file_path.parent), suffix='.tmp')
+                    
+                    try:
+                        # Download to temp file
+                        with os.fdopen(temp_fd, 'wb') as temp_file:
+                            blob_data = blob_client.download_blob()
+                            blob_data.readinto(temp_file)
+                        
+                        # Move temp file to final location (atomic operation)
+                        shutil.move(temp_path, local_file_str)
+                        
+                        downloaded_count += 1
+                        logger.info(f"Successfully downloaded: {blob.name}")
+                        
+                    except Exception as temp_error:
+                        # Clean up temp file on error
+                        if os.path.exists(temp_path):
+                            os.unlink(temp_path)
+                        raise temp_error
+                    
+                except Exception as blob_error:
+                    logger.error(f"Error downloading blob {blob.name}: {blob_error}")
+                    logger.exception(blob_error)
+                    raise  # Re-raise to trigger outer exception handler
             
             logger.info(f"Directory download complete. Downloaded {downloaded_count} files to: {local_dir}")
             return local_dir
