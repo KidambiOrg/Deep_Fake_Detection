@@ -1,7 +1,8 @@
 """
-Agent and Thread Deletion Utilities for Azure AI Foundry
+Agent and Thread Administration Utilities for Azure AI Foundry
 
-This module provides functions to delete all agents and threads from an Azure AI Foundry project.
+This module provides functions to manage agents and threads in an Azure AI Foundry project.
+Includes utilities for finding, creating, deleting, and reusing agents and threads.
 Based on: https://github.com/frdeange/AifoundryAgentsCleaner/blob/main/main.py
 """
 
@@ -10,6 +11,52 @@ from typing import Optional
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
 from azure.ai.projects import AIProjectClient
+
+
+def find_agent_by_name(project_client: AIProjectClient, agent_name: str) -> Optional[str]:
+    """
+    Find an agent by name and return its ID.
+    
+    Args:
+        project_client: An instance of AIProjectClient connected to your AI Foundry project
+        agent_name: The name of the agent to find
+        
+    Returns:
+        Agent ID if found, None otherwise
+    """
+    try:
+        agents_list = list(project_client.agents.list_agents())
+        for agent in agents_list:
+            if agent.name == agent_name:
+                return agent.id
+        return None
+    except Exception as e:
+        print(f"Error finding agent by name '{agent_name}': {e}")
+        return None
+
+
+def find_thread_by_metadata(project_client: AIProjectClient, metadata_key: str, metadata_value: str) -> Optional[str]:
+    """
+    Find a thread by metadata key-value pair and return its ID.
+    
+    Args:
+        project_client: An instance of AIProjectClient connected to your AI Foundry project
+        metadata_key: The metadata key to search for
+        metadata_value: The metadata value to match
+        
+    Returns:
+        Thread ID if found, None otherwise
+    """
+    try:
+        threads = list(project_client.agents.threads.list())
+        for thread in threads:
+            if hasattr(thread, 'metadata') and thread.metadata:
+                if thread.metadata.get(metadata_key) == metadata_value:
+                    return thread.id
+        return None
+    except Exception as e:
+        print(f"Error finding thread by metadata '{metadata_key}={metadata_value}': {e}")
+        return None
 
 
 def delete_all_agents(project_client: AIProjectClient) -> None:
