@@ -102,6 +102,24 @@ MODEL_REGISTRY = {
         }
     },
     
+    'mobilenetv2_cnn': {
+        'name': 'MobileNetV2 CNN Fine-tuned',
+        'display_name': 'MobileNetV2 CNN Detector',
+        'description': 'Lightweight MobileNetV2 with custom CNN layers fine-tuned for deepfake detection',
+        'architecture': 'MobileNetV2_CNN',
+        'source': 'mobilenetv2_cnn',
+        'model_type': 'cnn_finetuned',
+        'model_path': 'Models/MobileNETV2_CNN_FineTuned/mobilenetv2_deepfake.h5',
+        'recommended_threshold': 0.5,
+        'output_format': 'single_sigmoid',
+        'label_convention': '1.0=FAKE, 0.0=REAL',
+        'local_path': 'Models/MobileNETV2_CNN_FineTuned',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'MobileNETV2_CNN_FineTuned'
+        }
+    },
+    
     
   
 }

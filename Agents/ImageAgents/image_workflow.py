@@ -8,6 +8,7 @@ from Agents.ImageAgents.prithiv_v1_agent import create_prithiv_v1_agent
 from Agents.ImageAgents.dima_vit_agent import create_dima_vit_agent
 from Agents.ImageAgents.organika_sdxl_agent import create_organika_sdxl_agent
 from Agents.ImageAgents.mobilenetv2_agent import create_mobilenetv2_agent
+from Agents.ImageAgents.mobilenetv2_cnn_agent import create_mobilenetv2_cnn_agent
 from outputModel.image_detection_output_model import ImageDetectionResult, IndividualModelResult, VotingResult
 from imagedetectionlib.model_registry import get_model_info
 import numpy as np
@@ -34,7 +35,7 @@ def get_or_create_agents():
     Thread-safe initialization prevents duplicate loading.
     
     Returns:
-        Tuple of (nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent)
+        Tuple of (nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent)
     """
     global _cached_agents
     
@@ -59,6 +60,7 @@ def get_or_create_agents():
         dima_vit_agent = create_dima_vit_agent()
         organika_sdxl_agent = create_organika_sdxl_agent()
         mobilenetv2_agent = create_mobilenetv2_agent()
+        mobilenetv2_cnn_agent = create_mobilenetv2_cnn_agent()
         
         # Cache the agents globally
         _cached_agents = (
@@ -67,7 +69,8 @@ def get_or_create_agents():
             prithiv_v1_agent,
             dima_vit_agent,
             organika_sdxl_agent,
-            mobilenetv2_agent
+            mobilenetv2_agent,
+            mobilenetv2_cnn_agent
         )
         
         logger.info("All detection agents created and cached successfully")
@@ -109,7 +112,7 @@ async def run_image_detection_workflow(
     try:
         # Get or create detection agents (cached to avoid recreating on every request)
         logger.info("Getting detection agents...")
-        nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent = get_or_create_agents()
+        nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent = get_or_create_agents()
         
         # Validate image_path exists
         if not image_path:
@@ -139,7 +142,8 @@ async def run_image_detection_workflow(
             prithiv_v1_agent,
             dima_vit_agent,
             organika_sdxl_agent,
-            mobilenetv2_agent
+            mobilenetv2_agent,
+            mobilenetv2_cnn_agent
         ]).with_aggregator(custom_aggregator).build()
         
         logger.info("Running concurrent detection workflow...")

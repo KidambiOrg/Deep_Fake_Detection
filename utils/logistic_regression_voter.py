@@ -60,9 +60,9 @@ class LogisticRegressionVoter:
                 solver='lbfgs'
             )
         self.scaler = StandardScaler()
-        # Model order for 6 models (12 features) - mobilenetv2-cnn ignored
+        # Model order for 7 models (14 features)
         self.model_order = ['nonescape-full', 'seresnet50', 'prithiv-v1', 
-                           'dima-vit', 'organika-sdxl', 'mobilenetv2']
+                           'dima-vit', 'organika-sdxl', 'mobilenetv2', 'mobilenetv2_cnn']
         self.is_trained = False
     
     def _extract_features(self, results: List[Dict]) -> np.ndarray:

@@ -3,8 +3,15 @@ Train Logistic Regression Meta-Classifier using separate fake/real folders.
 
 This script:
 1. Loads images from separate fake and real folders
-2. Runs detection to get base model predictions
-3. Trains LR meta-classifier on the results
+2. Runs detection to get base model predictions from all 7 models:
+   - NoEscape (nonescape-full)
+   - SEResNet50 (seresnet50)
+   - Prithiv V1 (prithiv-v1)
+   - DimaVit (dima-vit)
+   - Organika SDXL (organika-sdxl)
+   - MobileNetV2 (mobilenetv2)
+   - MobileNetV2 CNN (mobilenetv2_cnn)
+3. Trains LR meta-classifier on the results (14 features: 7 models × 2 scores each)
 4. Saves the trained model
 
 Folder structure:
@@ -183,8 +190,11 @@ async def main():
     fake_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\testthresholdvoting\fake"
     real_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\testthresholdvoting\real"
 
-    # Process 100 images per class (500 total) for good training data
-    # This balances training time (~4-5 hours) with having enough samples
+    # Process images per class for good training data
+    # With 7 models running concurrently per image:
+    # - 100 images per class (~2-3 hours total)
+    # - 500 images per class (~8-12 hours total) - recommended for production
+    # This balances training time with having enough samples for reliable LR weights
     max_images_per_class = 500
     
     # Step 1: Collect training data
