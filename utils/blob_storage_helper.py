@@ -9,6 +9,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 import tempfile
 import hashlib
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class BlobStorageModelLoader:
         # Blob client will be initialized on first use
         self._blob_service_client: Optional[BlobServiceClient] = None
         self._initialization_attempted = False
+        self._init_lock = threading.Lock()  # Thread-safe initialization
         
         # Set up local cache directory
         self.cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
@@ -70,70 +72,81 @@ class BlobStorageModelLoader:
     @property
     def blob_service_client(self) -> Optional[BlobServiceClient]:
         """
-        Lazy initialization of blob service client.
+        Lazy initialization of blob service client (thread-safe).
         Only connects to blob storage when actually needed (after cache check fails).
         """
+        # Fast path: if already initialized, return immediately (no lock needed)
         if self._initialization_attempted:
             return self._blob_service_client
         
-        self._initialization_attempted = True
-        
-        # Try Managed Identity first (recommended for production)
-        if self.storage_account_name:
-            try:
-                # Use DefaultAzureCredential with explicit logging
-                logger.info(f"Connecting to storage account: {self.storage_account_name}")
-                
-                # Check if running in Azure (Container Apps, App Service, etc.)
-                is_azure_environment = os.environ.get("WEBSITE_INSTANCE_ID") or os.environ.get("CONTAINER_APP_NAME")
-                
-                if is_azure_environment:
-                    # Running in Azure - use Managed Identity (IMDS)
-                    logger.info("Detected Azure environment - using Managed Identity")
-                    credential = DefaultAzureCredential(
-                        exclude_managed_identity_credential=False,  # Enable Managed Identity for Azure
-                        exclude_shared_token_cache_credential=True,
-                        exclude_visual_studio_code_credential=True,
-                        exclude_azure_cli_credential=True,
-                        exclude_interactive_browser_credential=True,
-                        exclude_environment_credential=False
-                    )
-                else:
-                    # Local development - prioritize Azure CLI
-                    logger.info("Detected local environment - using Azure CLI credential")
-                    credential = DefaultAzureCredential(
-                        exclude_managed_identity_credential=True,  # Exclude IMDS for local dev
-                        exclude_shared_token_cache_credential=False,
-                        exclude_visual_studio_code_credential=False,
-                        exclude_azure_cli_credential=False,  # Use Azure CLI (az login)
-                        exclude_interactive_browser_credential=False,
-                        exclude_environment_credential=False
-                    )
-                
-                account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
-                
-                # Enable Azure SDK logging for authentication debugging
-                import sys
-                azure_logger = logging.getLogger('azure.core.pipeline.policies.http_logging_policy')
-                azure_logger.setLevel(logging.INFO)
-                azure_logger.addHandler(logging.StreamHandler(sys.stdout))
-                
-                self._blob_service_client = BlobServiceClient(
-                    account_url=account_url,
-                    credential=credential,
-                    logging_enable=True
-                )
-                
-                logger.info(f"Azure Blob Storage client initialized with Managed Identity: {self.storage_account_name}")
-                logger.info(f"Storage account URL: {account_url}")
+        # Slow path: need to initialize (with lock for thread safety)
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if self._initialization_attempted:
                 return self._blob_service_client
+            
+            # Try Managed Identity first (recommended for production)
+            if self.storage_account_name:
+                try:
+                    # Use DefaultAzureCredential with explicit logging
+                    logger.info(f"Connecting to storage account: {self.storage_account_name}")
                     
-            except Exception as e:
-                logger.error(f"Failed to initialize with Managed Identity: {e}")
-        else:
-            logger.warning("STORAGE_ACCOUNT_NAME not configured. Model loading from blob storage disabled.")
-        
-        return None
+                    # Check if running in Azure (Container Apps, App Service, etc.)
+                    is_azure_environment = os.environ.get("WEBSITE_INSTANCE_ID") or os.environ.get("CONTAINER_APP_NAME")
+                    
+                    if is_azure_environment:
+                        # Running in Azure - use Managed Identity (IMDS)
+                        logger.info("Detected Azure environment - using Managed Identity")
+                        credential = DefaultAzureCredential(
+                            exclude_managed_identity_credential=False,  # Enable Managed Identity for Azure
+                            exclude_shared_token_cache_credential=True,
+                            exclude_visual_studio_code_credential=True,
+                            exclude_azure_cli_credential=True,
+                            exclude_interactive_browser_credential=True,
+                            exclude_environment_credential=False
+                        )
+                    else:
+                        # Local development - prioritize Azure CLI
+                        logger.info("Detected local environment - using Azure CLI credential")
+                        credential = DefaultAzureCredential(
+                            exclude_managed_identity_credential=True,  # Exclude IMDS for local dev
+                            exclude_shared_token_cache_credential=False,
+                            exclude_visual_studio_code_credential=False,
+                            exclude_azure_cli_credential=False,  # Use Azure CLI (az login)
+                            exclude_interactive_browser_credential=False,
+                            exclude_environment_credential=False
+                        )
+                    
+                    account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
+                    
+                    # Enable Azure SDK logging for authentication debugging
+                    import sys
+                    azure_logger = logging.getLogger('azure.core.pipeline.policies.http_logging_policy')
+                    azure_logger.setLevel(logging.INFO)
+                    azure_logger.addHandler(logging.StreamHandler(sys.stdout))
+                    
+                    self._blob_service_client = BlobServiceClient(
+                        account_url=account_url,
+                        credential=credential,
+                        logging_enable=True
+                    )
+                    
+                    logger.info(f"Azure Blob Storage client initialized with Managed Identity: {self.storage_account_name}")
+                    logger.info(f"Storage account URL: {account_url}")
+                    
+                    # Mark as initialized ONLY after successful client creation
+                    self._initialization_attempted = True
+                    return self._blob_service_client
+                        
+                except Exception as e:
+                    logger.error(f"Failed to initialize with Managed Identity: {e}")
+                    # Don't set _initialization_attempted - allow retry
+            else:
+                logger.warning("STORAGE_ACCOUNT_NAME not configured. Model loading from blob storage disabled.")
+                # Mark as attempted to avoid repeated warnings
+                self._initialization_attempted = True
+            
+            return None
     
     def _get_cache_path(self, blob_path: str) -> Path:
         """Get local cache path for a blob"""
@@ -321,11 +334,20 @@ class BlobStorageModelLoader:
 
 # Global singleton instance
 _blob_loader: Optional[BlobStorageModelLoader] = None
+_blob_loader_lock = threading.Lock()
 
 
 def get_blob_loader() -> BlobStorageModelLoader:
-    """Get or create global blob storage loader instance"""
+    """Get or create global blob storage loader instance (thread-safe)"""
     global _blob_loader
-    if _blob_loader is None:
-        _blob_loader = BlobStorageModelLoader()
-    return _blob_loader
+    
+    # Fast path: if already initialized, return immediately
+    if _blob_loader is not None:
+        return _blob_loader
+    
+    # Slow path: need to create instance (with lock for thread safety)
+    with _blob_loader_lock:
+        # Double-check after acquiring lock
+        if _blob_loader is None:
+            _blob_loader = BlobStorageModelLoader()
+        return _blob_loader

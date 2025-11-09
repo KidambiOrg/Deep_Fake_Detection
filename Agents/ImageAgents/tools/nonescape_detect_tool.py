@@ -120,42 +120,6 @@ def load_nonescape_model():
     _nonescape_model = model
     return model, _device
 
-def preprocess_image(image_path: str):
-    """
-    Preprocess image from file path for NoEscape model.
-    Loads image from disk and applies necessary transformations.
-    MUST MATCH imagedetectionlib/detect_deepfake_nonescape.py preprocessing exactly!
-    """
-    from PIL import ImageFile
-    from torchvision.transforms import v2 as T
-    
-    # Allow loading truncated images
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
-    
-    logger.info(f"Loading image from: {image_path}")
-    
-    # Load image from file path
-    image = Image.open(image_path)
-    
-    # Load the image data completely (detect truncation early)
-    image.load()
-    
-    # Ensure RGB format
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # EXACT transforms from imagedetectionlib (Resize 256 -> CenterCrop 224 -> JPEG compression)
-    transform = T.Compose([
-        T.ToImage(),
-        T.Resize(256),
-        T.CenterCrop(224),
-        T.JPEG(quality=100),
-        T.ToDtype(torch.float32, scale=True),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-    
-    return transform(image).unsqueeze(0)
-
 def detect_with_nonescape_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the NoEscape model.
@@ -178,8 +142,29 @@ def detect_with_nonescape_tool(image_path: str) -> dict:
         model, device = load_nonescape_model()
         
         logger.info("Preprocessing image...")
-        # Preprocess image from file path
-        image_tensor = preprocess_image(image_path)
+        # Load image from file path
+        from PIL import ImageFile
+        from torchvision.transforms import v2 as T
+        
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        
+        image = Image.open(image_path)
+        image.load()
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # EXACT transforms from imagedetectionlib (Resize 256 -> CenterCrop 224 -> JPEG compression)
+        transform = T.Compose([
+            T.ToImage(),
+            T.Resize(256),
+            T.CenterCrop(224),
+            T.JPEG(quality=100),
+            T.ToDtype(torch.float32, scale=True),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        
+        image_tensor = transform(image).unsqueeze(0)
         image_tensor = image_tensor.to(device)
         
         logger.info("Running inference...")

@@ -3,6 +3,7 @@
 import logging
 from typing import Optional, Dict, List, Any
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +125,11 @@ def download_model_from_blob(
 
 def download_multiple_models(
     model_configs: List[Dict[str, str]],
-    force_download: bool = True
+    force_download: bool = True,
+    max_workers: int = 5
 ) -> Dict[str, Any]:
     """
-    Download multiple models from Azure Blob Storage in sequence.
+    Download multiple models from Azure Blob Storage in parallel.
     Always overwrites cache by default.
     
     Args:
@@ -135,7 +137,10 @@ def download_multiple_models(
             - container_name: Container name
             - blob_name: Optional blob file name
             - blob_prefix: Optional blob directory prefix
+            - model_key: Optional model identifier for tracking
+            - model_name: Optional model display name for tracking
         force_download: If True, re-download even if cached (default: True to always overwrite)
+        max_workers: Maximum number of parallel downloads (default: 5)
         
     Returns:
         Dictionary with overall status and per-model results:
@@ -147,25 +152,26 @@ def download_multiple_models(
             "results": [list of individual download results]
         }
     """
-    results = []
-    successful = 0
-    failed = 0
-    
-    for config in model_configs:
+    def download_single_config(config: Dict[str, str]) -> Dict[str, Any]:
+        """Helper function to download a single model configuration."""
         container = config.get('container_name')
         blob_name = config.get('blob_name')
         blob_prefix = config.get('blob_prefix')
+        model_key = config.get('model_key', 'unknown')
+        model_name = config.get('model_name', model_key)
         
         # Skip if container is missing
         if not container:
-            results.append({
+            logger.error(f"Missing container_name for model {model_name}")
+            return {
                 "status": "error",
                 "message": "Missing container_name in configuration",
-                "blob_name": None
-            })
-            failed += 1
-            continue
+                "blob_name": None,
+                "model_key": model_key,
+                "model_name": model_name
+            }
         
+        logger.info(f"Downloading model {model_name} ({model_key})...")
         result = download_model_from_blob(
             container_name=container,
             blob_name=blob_name,
@@ -173,12 +179,55 @@ def download_multiple_models(
             force_download=force_download
         )
         
-        results.append(result)
+        # Add model tracking info to result
+        result['model_key'] = model_key
+        result['model_name'] = model_name
         
         if result['status'] == 'success':
-            successful += 1
+            logger.info(f"✓ Successfully downloaded {model_name}")
         else:
-            failed += 1
+            logger.error(f"✗ Failed to download {model_name}: {result.get('message', 'Unknown error')}")
+        
+        return result
+    
+    logger.info(f"Starting parallel download of {len(model_configs)} models with {max_workers} workers...")
+    
+    results = []
+    successful = 0
+    failed = 0
+    
+    # Use ThreadPoolExecutor for parallel downloads
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all download tasks
+        future_to_config = {
+            executor.submit(download_single_config, config): config 
+            for config in model_configs
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_config):
+            try:
+                result = future.result()
+                results.append(result)
+                
+                if result['status'] == 'success':
+                    successful += 1
+                else:
+                    failed += 1
+                    
+            except Exception as e:
+                config = future_to_config[future]
+                model_name = config.get('model_name', config.get('model_key', 'unknown'))
+                logger.error(f"Exception downloading {model_name}: {e}")
+                
+                results.append({
+                    "status": "error",
+                    "message": f"Exception during download: {str(e)}",
+                    "blob_name": config.get('blob_name') or config.get('blob_prefix'),
+                    "model_key": config.get('model_key', 'unknown'),
+                    "model_name": model_name
+                })
+                failed += 1
     
     # Determine overall status
     if failed == 0:
@@ -187,6 +236,8 @@ def download_multiple_models(
         overall_status = "error"
     else:
         overall_status = "partial"
+    
+    logger.info(f"Parallel download complete: {successful}/{len(model_configs)} successful, {failed} failed")
     
     return {
         "status": overall_status,

@@ -114,26 +114,6 @@ def load_organika_model():
         logger.error(f"Failed to load Organika SDXL model: {e}")
         return None, None, _device
 
-def preprocess_image(image_path: str, processor=None):
-    """Preprocess image from file path for Organika SDXL model."""
-    from PIL import ImageFile
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
-    
-    # Load image from file path
-    image = Image.open(image_path)
-    image.load()
-    
-    # Ensure RGB format
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Use processor to prepare inputs
-    if processor:
-        inputs = processor(images=image, return_tensors="pt")
-        return inputs
-    else:
-        raise ValueError("Processor is required for preprocessing")
-
 def detect_with_organika_sdxl_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the Organika SDXL model.
@@ -155,8 +135,17 @@ def detect_with_organika_sdxl_tool(image_path: str) -> dict:
         if model is None or processor is None:
             raise Exception("Failed to load Organika SDXL model")
         
-        # Preprocess image from file path
-        inputs = preprocess_image(image_path, processor)
+        # Load and preprocess image from file path
+        from PIL import ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        
+        image = Image.open(image_path)
+        image.load()
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        inputs = processor(images=image, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
         # Run inference

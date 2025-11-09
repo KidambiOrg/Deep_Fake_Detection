@@ -139,44 +139,6 @@ def load_mobilenetv2_model():
         logger.error(f"Failed to load MobileNetV2 model: {e}", exc_info=True)
         return None
 
-def preprocess_image(image_path: str):
-    """
-    Preprocess image from file path for MobileNetV2 model.
-    Loads image from disk and applies necessary transformations.
-    
-    Preprocessing steps (matching reference implementation):
-    1. Load image from file
-    2. Resize to 224x224
-    3. Normalize to [0, 1] range
-    4. Add batch dimension
-    """
-    from PIL import ImageFile
-    
-    # Allow loading truncated images
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
-    
-    logger.info(f"Loading image from: {image_path}")
-    
-    # Load image from file path
-    image = Image.open(image_path).convert('RGB')
-    
-    # Load the image data completely
-    image.load()
-    
-    # Convert PIL to numpy array
-    img_array = np.array(image)
-    
-    # Resize to 224x224 (model input size)
-    img_resized = cv2.resize(img_array, (224, 224))
-    
-    # Normalize to [0, 1] range (matching reference implementation)
-    img_normalized = img_resized / 255.0
-    
-    # Add batch dimension
-    img_batch = np.expand_dims(img_normalized, axis=0)
-    
-    return img_batch
-
 def detect_with_mobilenetv2_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the MobileNetV2 model.
@@ -184,7 +146,7 @@ def detect_with_mobilenetv2_tool(image_path: str) -> dict:
     Returns dictionary representation of IndividualModelResult for JSON serialization.
     
     Args:
-        image_path: File path to image to analyze
+        numpy_array: Preprocessed NumPy array (already normalized and sized)
         
     Returns:
         Dictionary with detection results
@@ -203,8 +165,24 @@ def detect_with_mobilenetv2_tool(image_path: str) -> dict:
             raise Exception(error_msg)
         
         logger.info("Preprocessing image...")
-        # Preprocess image from file path
-        img_batch = preprocess_image(image_path)
+        # Load and preprocess image from file path
+        from PIL import ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        
+        image = Image.open(image_path).convert('RGB')
+        image.load()
+        
+        # Convert PIL to numpy array
+        img_array = np.array(image)
+        
+        # Resize to 224x224 (model input size)
+        img_resized = cv2.resize(img_array, (224, 224))
+        
+        # Normalize to [0, 1] range
+        img_normalized = img_resized / 255.0
+        
+        # Add batch dimension
+        img_batch = np.expand_dims(img_normalized, axis=0)
         
         logger.info("Running inference...")
         # Run inference

@@ -1,10 +1,8 @@
 """NoEscape Agent for deepfake detection using Agent Framework."""
 
-from agent_framework.azure import AzureAIAgentClient
-from azure.identity.aio import AzureCliCredential
 from Agents.ImageAgents.tools.nonescape_detect_tool import detect_with_nonescape_tool
 from imagedetectionlib.model_registry import get_model_info
-import os
+from utils.azure_client_pool import get_or_create_azure_client
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,6 +10,8 @@ logger = logging.getLogger(__name__)
 def create_nonescape_agent():
     """
     Create or reuse NoEscape detection agent from Azure AI Foundry.
+    
+    Uses shared Azure AI client pool to reduce initialization overhead.
     
     Returns:
         Agent configured with NoEscape detection tool
@@ -21,9 +21,9 @@ def create_nonescape_agent():
     instructions = """You are a specialized deepfake detection agent using the NoEscape model.
 Your task is to analyze images and determine if they are real or AI-generated/manipulated.
 
-IMPORTANT: You will receive an image file path as input.
+IMPORTANT: You will receive an image file path as input (a string path to the image file).
 
-When you receive an image path:
+When you receive an image:
 1. Call detect_with_nonescape_tool(image_path=<the file path provided>)
 2. The tool will return a dictionary with the detection results
 3. Output ONLY the JSON dictionary returned by the tool - do not add any commentary or explanation
@@ -32,15 +32,8 @@ Example response format:
 {"model": "nonescape-full", "prediction": "FAKE", "confidence": 0.95, "fakeScore": 0.95, "realScore": 0.05}
 
 Do not include any text before or after the JSON output."""
-    # Initialize Azure AI Foundry Agent Client
-    project_endpoint = os.getenv('AZURE_AI_PROJECT_ENDPOINT')
-    deployment_name = os.getenv('AZURE_AI_MODEL_DEPLOYMENT_NAME')
-
-    chat_client = AzureAIAgentClient(
-        project_endpoint=project_endpoint,
-        model_deployment_name=deployment_name,
-        async_credential=AzureCliCredential()
-    )
+    # Use shared Azure AI client (reduces initialization from 3-5s to <100ms)
+    chat_client = get_or_create_azure_client()
     
     # Create agent (Azure AI Foundry handles agent lifecycle)
     logger.info(f"Creating {agent_name} agent...")

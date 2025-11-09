@@ -385,38 +385,6 @@ def load_seresnet50_model():
         logger.error(f"Failed to load SEResNet50 model: {e}", exc_info=True)
         return None, _device
 
-def preprocess_image(image_path: str):
-    """
-    Preprocess image from file path for SEResNet50 model.
-    Loads image from disk and applies necessary transformations.
-    """
-    from PIL import ImageFile
-    
-    # Allow loading truncated images
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
-    
-    logger.info(f"Loading image from: {image_path}")
-    
-    # Load image from file path
-    image = Image.open(image_path)
-    
-    # Load the image data completely (detect truncation early)
-    image.load()
-    
-    # Ensure RGB format
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Define transforms
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    
-    return transform(image).unsqueeze(0)
-
- 
 def detect_with_seresnet50_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the SEResNet50 model.
@@ -443,9 +411,24 @@ def detect_with_seresnet50_tool(image_path: str) -> dict:
             raise Exception(error_msg)
         
         logger.info("Preprocessing image...")
-        # Preprocess image from file path
-        image_tensor = preprocess_image(image_path)
-        image_tensor = image_tensor.to(device)
+        # Load and preprocess image from file path
+        from PIL import ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        
+        image = Image.open(image_path)
+        image.load()
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        
+        tensor = transform(image)
+        image_tensor = tensor.unsqueeze(0).to(device)
         
         logger.info("Running inference...")
         # Run inference
