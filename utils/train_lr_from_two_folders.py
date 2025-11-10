@@ -3,7 +3,7 @@ Train Logistic Regression Meta-Classifier using separate fake/real folders.
 
 This script:
 1. Loads images from separate fake and real folders
-2. Runs detection to get base model predictions from all 7 models:
+2. Runs detection to get base model predictions from all 8 models:
    - NoEscape (nonescape-full)
    - SEResNet50 (seresnet50)
    - Prithiv V1 (prithiv-v1)
@@ -11,7 +11,8 @@ This script:
    - Organika SDXL (organika-sdxl)
    - MobileNetV2 (mobilenetv2)
    - MobileNetV2 CNN (mobilenetv2_cnn)
-3. Trains LR meta-classifier on the results (14 features: 7 models × 2 scores each)
+   - Prithiv Open Deepfake (prithiv-open-deep-fake)
+3. Trains LR meta-classifier on the results (16 features: 8 models × 2 scores each)
 4. Saves the trained model
 
 Folder structure:
@@ -191,7 +192,7 @@ async def main():
     real_folder = r"C:\Kidambi\WorkRelated\DeepFake\sample_images\testthresholdvoting\real"
 
     # Process images per class for good training data
-    # With 7 models running concurrently per image:
+    # With 8 models running concurrently per image:
     # - 100 images per class (~2-3 hours total)
     # - 500 images per class (~8-12 hours total) - recommended for production
     # This balances training time with having enough samples for reliable LR weights
@@ -224,10 +225,11 @@ async def main():
     
     # Step 2: Train the model
     print("\n2. Training Logistic Regression meta-classifier...")
-    voter = LogisticRegressionVoter()
+    print("   Using optimized hyperparameters with L1 regularization...")
+    voter = LogisticRegressionVoter(use_tuning=True)
     
     save_path = Path(__file__).parent.parent / 'Models' / 'lr_meta_classifier.pkl'
-    metrics = voter.train(training_data, save_path=str(save_path))
+    metrics = voter.train(training_data, save_path=str(save_path), use_cross_validation=True)
     
     # Step 3: Show results
     print("\n" + "="*80)

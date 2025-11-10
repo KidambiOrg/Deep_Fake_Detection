@@ -14,20 +14,23 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from transformers import AutoImageProcessor, AutoModelForImageClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification, SiglipImageProcessor, SiglipForImageClassification
 
 
-def download_model(model_name, output_dir):
+def download_model(model_name, output_dir, use_siglip=False):
     """
     Download a HuggingFace model and save to local directory
     
     Args:
         model_name: HuggingFace model identifier
         output_dir: Local directory to save the model
+        use_siglip: If True, use SigLIP-specific classes instead of Auto classes
     """
     print(f"\n{'='*80}")
     print(f"Downloading: {model_name}")
     print(f"Output: {output_dir}")
+    if use_siglip:
+        print("Model Type: SigLIP")
     print(f"{'='*80}\n")
     
     try:
@@ -37,15 +40,37 @@ def download_model(model_name, output_dir):
         
         # Download processor
         print("Downloading processor...")
-        processor = AutoImageProcessor.from_pretrained(model_name)
-        processor.save_pretrained(output_dir)
-        print("✓ Processor saved")
+        if use_siglip:
+            try:
+                processor = SiglipImageProcessor.from_pretrained(model_name)
+                processor.save_pretrained(output_dir)
+                print("✓ SigLIP Processor saved")
+            except Exception as e:
+                print(f"Failed with SigLIP processor, trying Auto: {e}")
+                processor = AutoImageProcessor.from_pretrained(model_name)
+                processor.save_pretrained(output_dir)
+                print("✓ Auto Processor saved")
+        else:
+            processor = AutoImageProcessor.from_pretrained(model_name)
+            processor.save_pretrained(output_dir)
+            print("✓ Processor saved")
         
         # Download model
         print("Downloading model...")
-        model = AutoModelForImageClassification.from_pretrained(model_name)
-        model.save_pretrained(output_dir)
-        print("✓ Model saved")
+        if use_siglip:
+            try:
+                model = SiglipForImageClassification.from_pretrained(model_name)
+                model.save_pretrained(output_dir)
+                print("✓ SigLIP Model saved")
+            except Exception as e:
+                print(f"Failed with SigLIP model, trying Auto: {e}")
+                model = AutoModelForImageClassification.from_pretrained(model_name)
+                model.save_pretrained(output_dir)
+                print("✓ Auto Model saved")
+        else:
+            model = AutoModelForImageClassification.from_pretrained(model_name)
+            model.save_pretrained(output_dir)
+            print("✓ Model saved")
         
         print(f"\n✅ Successfully downloaded {model_name}")
         print(f"   Saved to: {output_dir}\n")
@@ -68,11 +93,18 @@ def main():
     models = [
         {
             'name': 'prithivMLMods/deepfake-detector-model-v1',
-            'output': models_dir / 'huggingface' / 'prithivMLMods' / 'deepfake-detector-model-v1'
+            'output': models_dir / 'huggingface' / 'prithivMLMods' / 'deepfake-detector-model-v1',
+            'use_siglip': False
         },
         {
             'name': 'Organika/sdxl-detector',
-            'output': models_dir / 'huggingface' / 'Organika' / 'sdxl-detector'
+            'output': models_dir / 'huggingface' / 'Organika' / 'sdxl-detector',
+            'use_siglip': False
+        },
+        {
+            'name': 'prithivMLmods/open-deepfake-detection',
+            'output': models_dir / 'huggingface' / 'prithiv_open_deep_fake',
+            'use_siglip': True  # This model uses SigLIP architecture
         }
     ]
     
@@ -86,7 +118,8 @@ def main():
     failed = 0
     
     for model_info in models:
-        if download_model(model_info['name'], str(model_info['output'])):
+        use_siglip = model_info.get('use_siglip', False)
+        if download_model(model_info['name'], str(model_info['output']), use_siglip=use_siglip):
             successful += 1
         else:
             failed += 1

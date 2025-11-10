@@ -16,9 +16,9 @@ def create_mobilenetv2_cnn_agent():
     Returns:
         Agent configured with MobileNetV2 CNN detection tool
     """
-    # Get agent name from model registry
+    # Get unique agent name from model registry (use model key for uniqueness)
     model_info = get_model_info('mobilenetv2_cnn')
-    agent_name = model_info['display_name'] if model_info else 'MobileNetV2 CNN Detector'
+    agent_name = f"mobilenetv2-cnn-{model_info['display_name']}" if model_info else 'mobilenetv2-cnn-MobileNetV2 CNN Detector'
     instructions = """You are a specialized deepfake detection agent using the MobileNetV2 CNN model.
 Your task is to analyze images and determine if they are real or AI-generated/manipulated.
 
@@ -34,8 +34,19 @@ Example response format:
 
 Do not include any text before or after the JSON output."""
     
-    # Use shared Azure AI client (reduces initialization from 3-5s to <100ms)
-    chat_client = get_or_create_azure_client()
+    # Create dedicated Azure AI client for this agent (avoids agent pooling/caching issues)
+    import os
+    from agent_framework.azure import AzureAIAgentClient
+    from azure.identity.aio import AzureCliCredential
+    
+    project_endpoint = os.getenv('AZURE_AI_PROJECT_ENDPOINT')
+    deployment_name = os.getenv('AZURE_AI_MODEL_DEPLOYMENT_NAME')
+    
+    chat_client = AzureAIAgentClient(
+        project_endpoint=project_endpoint,
+        model_deployment_name=deployment_name,
+        async_credential=AzureCliCredential()
+    )
     
     # Create agent (Azure AI Foundry handles agent lifecycle)
     logger.info(f"Creating {agent_name} agent...")

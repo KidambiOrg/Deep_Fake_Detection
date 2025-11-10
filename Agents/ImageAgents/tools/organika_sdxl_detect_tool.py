@@ -1,8 +1,8 @@
-"""Organika SDXL detection tool with blob storage caching."""
+"""Organika SDXL detection tool with blob storage caching and 8-bit quantization."""
 
 from outputModel.image_detection_output_model import IndividualModelResult
 import torch
-from transformers import AutoModelForImageClassification, AutoImageProcessor
+from transformers import AutoModelForImageClassification, AutoImageProcessor, BitsAndBytesConfig
 from PIL import Image
 import base64
 import io
@@ -100,8 +100,24 @@ def load_organika_model():
     try:
         logger.info(f"Loading Organika SDXL model from: {model_path}")
         processor = AutoImageProcessor.from_pretrained(model_path)
-        model = AutoModelForImageClassification.from_pretrained(model_path)
-        model = model.to(_device)
+        
+        # Use 8-bit quantization on CUDA for memory efficiency
+        if _device.type == 'cuda':
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0
+            )
+            model = AutoModelForImageClassification.from_pretrained(
+                model_path,
+                quantization_config=quantization_config,
+                device_map="auto"
+            )
+            logger.info("✓ Using 8-bit quantization (~50% memory reduction)")
+        else:
+            # CPU: use standard loading
+            model = AutoModelForImageClassification.from_pretrained(model_path)
+            model = model.to(_device)
+        
         model.eval()
         
         _organika_model = model

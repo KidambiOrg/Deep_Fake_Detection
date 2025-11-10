@@ -4,7 +4,7 @@ This package provides concurrent workflow implementations for deepfake detection
 using Microsoft Agent Framework SDK.
 
 Image Detection:
-    - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL models
+    - NoEscape, SEResNet50, Prithiv V1, DimaVit, Organika SDXL, MobileNetV2, MobileNetV2 CNN, Prithiv Open Deepfake models
     - Ensemble voting with 14+ methods (majority, weighted, bayesian, etc.)
     - Returns ImageDetectionResult with markdown report
 

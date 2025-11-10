@@ -1,8 +1,8 @@
-"""Prithiv V1 detection tool with blob storage caching."""
+"""Prithiv V1 detection tool with blob storage caching and 8-bit quantization."""
 
 from outputModel.image_detection_output_model import IndividualModelResult
 import torch
-from transformers import AutoModelForImageClassification, AutoImageProcessor, SiglipForImageClassification
+from transformers import AutoModelForImageClassification, AutoImageProcessor, SiglipForImageClassification, BitsAndBytesConfig
 from PIL import Image
 import base64
 import io
@@ -97,13 +97,31 @@ def load_prithiv_model():
         logger.info(f"Loading Prithiv V1 model from: {model_path}")
         processor = AutoImageProcessor.from_pretrained(model_path)
         
+        # Configure 8-bit quantization for memory efficiency
+        # Only use quantization on CUDA devices (not CPU)
+        quantization_config = None
+        if _device.type == 'cuda':
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0  # Default threshold for stability
+            )
+            logger.info("✓ Using 8-bit quantization (50% memory reduction)")
+        
         # Try SigLIP architecture first (more accurate for this model)
         model_loaded = False
         try:
-            model = SiglipForImageClassification.from_pretrained(
-                model_path,
-                torch_dtype=torch.float32 if _device.type == 'cpu' else torch.float16
-            )
+            if quantization_config:
+                model = SiglipForImageClassification.from_pretrained(
+                    model_path,
+                    quantization_config=quantization_config,
+                    device_map="auto"
+                )
+            else:
+                model = SiglipForImageClassification.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float32
+                )
+                model = model.to(_device)
             logger.info("✓ Using SiglipForImageClassification (optimal for Prithiv)")
             model_loaded = True
         except Exception as e:
@@ -111,13 +129,20 @@ def load_prithiv_model():
         
         # Fallback to AutoModel
         if not model_loaded:
-            model = AutoModelForImageClassification.from_pretrained(
-                model_path,
-                torch_dtype=torch.float32 if _device.type == 'cpu' else torch.float16
-            )
+            if quantization_config:
+                model = AutoModelForImageClassification.from_pretrained(
+                    model_path,
+                    quantization_config=quantization_config,
+                    device_map="auto"
+                )
+            else:
+                model = AutoModelForImageClassification.from_pretrained(
+                    model_path,
+                    torch_dtype=torch.float32
+                )
+                model = model.to(_device)
             logger.info("Using AutoModelForImageClassification (fallback)")
         
-        model = model.to(_device)
         model.eval()
         
         _prithiv_model = model

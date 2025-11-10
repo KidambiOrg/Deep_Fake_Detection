@@ -16,8 +16,8 @@ def create_nonescape_agent():
     Returns:
         Agent configured with NoEscape detection tool
     """
-    # Get agent name from model registry
-    agent_name = get_model_info('nonescape-full')['display_name']
+    # Get unique agent name from model registry (use model key for uniqueness)
+    agent_name = f"nonescape-full-{get_model_info('nonescape-full')['display_name']}"
     instructions = """You are a specialized deepfake detection agent using the NoEscape model.
 Your task is to analyze images and determine if they are real or AI-generated/manipulated.
 
@@ -32,8 +32,19 @@ Example response format:
 {"model": "nonescape-full", "prediction": "FAKE", "confidence": 0.95, "fakeScore": 0.95, "realScore": 0.05}
 
 Do not include any text before or after the JSON output."""
-    # Use shared Azure AI client (reduces initialization from 3-5s to <100ms)
-    chat_client = get_or_create_azure_client()
+    # Create dedicated Azure AI client for this agent (avoids agent pooling/caching issues)
+    import os
+    from agent_framework.azure import AzureAIAgentClient
+    from azure.identity.aio import AzureCliCredential
+    
+    project_endpoint = os.getenv('AZURE_AI_PROJECT_ENDPOINT')
+    deployment_name = os.getenv('AZURE_AI_MODEL_DEPLOYMENT_NAME')
+    
+    chat_client = AzureAIAgentClient(
+        project_endpoint=project_endpoint,
+        model_deployment_name=deployment_name,
+        async_credential=AzureCliCredential()
+    )
     
     # Create agent (Azure AI Foundry handles agent lifecycle)
     logger.info(f"Creating {agent_name} agent...")

@@ -124,6 +124,13 @@ class ModelUploader:
         size_mb = file_size / (1024 * 1024)
         
         try:
+            # Ensure container exists first
+            container_client = self.blob_service_client.get_container_client(container_name)
+            if not container_client.exists():
+                if not dry_run:
+                    container_client.create_container()
+                    print(f"   ✓ Created container: {container_name}")
+            
             blob_client = self.blob_service_client.get_blob_client(
                 container=container_name,
                 blob=blob_name
@@ -133,16 +140,16 @@ class ModelUploader:
             exists = blob_client.exists()
             
             if exists and not force:
-                print(f"⚠️  Skipped (already exists): {blob_name} ({size_mb:.2f} MB)")
+                print(f"   ⚠️  Skipped (already exists): {blob_name} ({size_mb:.2f} MB)")
                 return True
             
             if dry_run:
                 action = "Would upload" if not exists or force else "Would skip"
-                print(f"[DRY RUN] {action}: {local_path} → {container_name}/{blob_name} ({size_mb:.2f} MB)")
+                print(f"   [DRY RUN] {action}: {local_path} → {container_name}/{blob_name} ({size_mb:.2f} MB)")
                 return True
             
             # Upload the file
-            print(f"⬆️  Uploading: {blob_name} ({size_mb:.2f} MB)...", end=" ")
+            print(f"   ⬆️  Uploading: {blob_name} ({size_mb:.2f} MB)...", end=" ")
             
             with open(local_path, "rb") as data:
                 blob_client.upload_blob(data, overwrite=force)
@@ -151,7 +158,7 @@ class ModelUploader:
             return True
             
         except Exception as e:
-            print(f"✗ Failed to upload {blob_name}: {e}")
+            print(f"   ✗ Failed to upload {blob_name}: {e}")
             return False
     
     def upload_directory(self, local_dir, container_name, blob_prefix, force=False, dry_run=False):
@@ -208,7 +215,6 @@ class ModelUploader:
         
         total_successful = 0
         total_failed = 0
-        containers_created = set()
         
         for model_key, model_info in MODEL_REGISTRY.items():
             print(f"\n📦 Processing: {model_key}")
@@ -226,14 +232,6 @@ class ModelUploader:
                 print("   ✗ No container specified in blob_storage config")
                 total_failed += 1
                 continue
-            
-            # Create container if needed
-            if container_name not in containers_created:
-                if not dry_run:
-                    self.create_container_if_not_exists(container_name)
-                else:
-                    print(f"   [DRY RUN] Would check/create container: {container_name}")
-                containers_created.add(container_name)
             
             # Handle single file upload
             if 'blob' in blob_config:

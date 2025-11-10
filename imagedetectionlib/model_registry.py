@@ -50,6 +50,20 @@ MODEL_REGISTRY = {
             'path': 'huggingface/Organika/sdxl-detector'
         }
     },
+    'prithiv-open-deep-fake': {
+        'name': 'prithivMLmods/open-deepfake-detection',
+        'display_name': 'Prithiv Open Deepfake Detector',
+        'description': 'Open source SigLIP-based deepfake detector',
+        'architecture': 'SigLIP',
+        'source': 'huggingface',
+        'labels': {0: 'Fake', 1: 'Real'},
+        'recommended_threshold': 0.5,
+        'local_path': 'Models/huggingface/prithiv_open_deep_fake',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'huggingface/prithiv_open_deep_fake'
+        }
+    },
     
     # Nonescape Models   
     'nonescape-full': {

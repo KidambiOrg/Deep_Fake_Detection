@@ -2,7 +2,7 @@
 Image Deepfake Detection Service using Agent Framework.
 
 This service accepts an image and processes it using the Agent Framework's
-concurrent workflow pattern with 7 detection agents:
+concurrent workflow pattern with 8 detection agents:
 - NoEscape (nonescape-full)
 - SEResNet50 (seresnet50)
 - Prithiv V1 (prithiv-v1)
@@ -10,6 +10,7 @@ concurrent workflow pattern with 7 detection agents:
 - Organika SDXL (organika-sdxl)
 - MobileNetV2 (mobilenetv2)
 - MobileNetV2 CNN (mobilenetv2_cnn)
+- Prithiv Open Deepfake (prithiv-open-deep-fake)
 
 Uses Logistic Regression meta-classifier (stacking ensemble) for optimal accuracy.
 The meta-classifier learns to combine model predictions from labeled validation data.

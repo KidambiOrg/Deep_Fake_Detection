@@ -1,8 +1,8 @@
-"""DimaVit detection tool with blob storage caching."""
+"""DimaVit detection tool with blob storage caching and 8-bit quantization."""
 
 from outputModel.image_detection_output_model import IndividualModelResult
 import torch
-from transformers import AutoModelForImageClassification, AutoImageProcessor
+from transformers import AutoModelForImageClassification, AutoImageProcessor, BitsAndBytesConfig
 from PIL import Image
 import base64
 import io
@@ -90,8 +90,24 @@ def load_dima_model():
     # Load model and processor
     try:
         processor = AutoImageProcessor.from_pretrained(model_path)
-        model = AutoModelForImageClassification.from_pretrained(model_path)
-        model = model.to(_device)
+        
+        # Configure 8-bit quantization for memory efficiency
+        # Only use quantization on CUDA devices (not CPU)
+        if _device.type == 'cuda':
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0
+            )
+            model = AutoModelForImageClassification.from_pretrained(
+                model_path,
+                quantization_config=quantization_config,
+                device_map="auto"
+            )
+            logger.info("✓ Using 8-bit quantization (50% memory reduction)")
+        else:
+            model = AutoModelForImageClassification.from_pretrained(model_path)
+            model = model.to(_device)
+        
         model.eval()
         
         _dima_model = model

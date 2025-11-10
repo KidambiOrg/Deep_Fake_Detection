@@ -1,5 +1,7 @@
 torch
 transformers
+bitsandbytes>=0.41.0
+accelerate>=0.20.0
 numpy
 torchaudio
 sentencepiece

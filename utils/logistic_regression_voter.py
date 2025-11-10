@@ -33,7 +33,7 @@ class LogisticRegressionVoter:
         is_trained: Whether the meta-classifier has been trained
     """
     
-    def __init__(self, use_tuning=False):
+    def __init__(self, use_tuning=True):
         """
         Initialize the Logistic Regression voter.
         
@@ -60,9 +60,10 @@ class LogisticRegressionVoter:
                 solver='lbfgs'
             )
         self.scaler = StandardScaler()
-        # Model order for 7 models (14 features)
+        # Model order for 8 models (16 features)
         self.model_order = ['nonescape-full', 'seresnet50', 'prithiv-v1', 
-                           'dima-vit', 'organika-sdxl', 'mobilenetv2', 'mobilenetv2_cnn']
+                           'dima-vit', 'organika-sdxl', 'mobilenetv2', 'mobilenetv2_cnn', 
+                           'prithiv-open-deep-fake']
         self.is_trained = False
     
     def _extract_features(self, results: List[Dict]) -> np.ndarray:
@@ -124,16 +125,30 @@ class LogisticRegressionVoter:
             features.append(np.std(fake_scores))   # Variance in fake scores (agreement)
             features.append(np.max(fake_scores))   # Max fake score
             features.append(np.min(fake_scores))   # Min fake score
+            features.append(np.mean(real_scores))  # Average real score
+            features.append(np.std(real_scores))   # Variance in real scores
             features.append(np.mean(confidences))  # Average confidence
+            features.append(np.max(confidences))   # Max confidence (strongest model)
             
             # Agreement features
             features.append(np.std(confidences))   # Model agreement/disagreement
             features.append(max(fake_scores) - min(fake_scores))  # Fake score range
+            features.append(max(real_scores) - min(real_scores))  # Real score range
             
             # Ratio features
             avg_fake = np.mean(fake_scores)
             avg_real = np.mean(real_scores)
             features.append(avg_fake / (avg_real + 1e-10))  # Fake/Real ratio
+            
+            # Count-based features
+            features.append(np.sum(np.array(fake_scores) > 0.7))  # High-confidence fake count
+            features.append(np.sum(np.array(real_scores) > 0.7))  # High-confidence real count
+            features.append(np.sum(np.array(confidences) > 0.8))  # Very confident models count
+            
+            # Quartile features for distribution understanding
+            features.append(np.percentile(fake_scores, 25))  # 25th percentile fake
+            features.append(np.percentile(fake_scores, 75))  # 75th percentile fake
+            features.append(np.median(fake_scores))  # Median fake score
         
         return np.array(features).reshape(1, -1)
     
@@ -329,37 +344,97 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
         # Fallback to Bayesian inference if not trained
         print("Warning: LR voter not trained. Using Bayesian inference as fallback.")
         
-        prior_fake = 0.5
-        log_likelihood_fake = 0.0
-        log_likelihood_real = 0.0
+        # Bayesian inference: combine independent model predictions
+        # Using log-sum-exp trick for numerical stability
+        
+        fake_scores = []
+        real_scores = []
         
         for result in results:
-            fake_score = result.get('fakeScore', 0.5)
-            real_score = result.get('realScore', 0.5)
-            
-            log_likelihood_fake += np.log(fake_score + 1e-10)
-            log_likelihood_real += np.log(real_score + 1e-10)
+            fake_scores.append(result.get('fakeScore', 0.5))
+            real_scores.append(result.get('realScore', 0.5))
         
-        likelihood_fake = np.exp(log_likelihood_fake)
-        likelihood_real = np.exp(log_likelihood_real)
+        # Convert to log probabilities for numerical stability
+        log_fake_scores = [np.log(max(s, 1e-10)) for s in fake_scores]
+        log_real_scores = [np.log(max(s, 1e-10)) for s in real_scores]
         
-        evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
-        if evidence > 0:
-            posterior_fake = (likelihood_fake * prior_fake) / evidence
-            posterior_real = (likelihood_real * (1 - prior_fake)) / evidence
+        # Sum log probabilities (equivalent to multiplying probabilities)
+        sum_log_fake = np.sum(log_fake_scores)
+        sum_log_real = np.sum(log_real_scores)
+        
+        # Use log-sum-exp trick to compute normalized probabilities
+        # First, shift by the maximum to prevent overflow
+        max_log = max(sum_log_fake, sum_log_real)
+        
+        exp_fake = np.exp(sum_log_fake - max_log)
+        exp_real = np.exp(sum_log_real - max_log)
+        
+        # Normalize
+        total = exp_fake + exp_real
+        if total > 0:
+            fake_prob = exp_fake / total
+            real_prob = exp_real / total
         else:
-            posterior_fake = prior_fake
-            posterior_real = 1 - prior_fake
+            fake_prob = 0.5
+            real_prob = 0.5
         
-        prediction = 'FAKE' if posterior_fake > posterior_real else 'REAL'
-        confidence = max(posterior_fake, posterior_real)
+        # Make prediction based on which probability is higher
+        prediction = 'FAKE' if fake_prob > real_prob else 'REAL'
+        confidence = max(fake_prob, real_prob)
         
-        return prediction, confidence, posterior_fake, posterior_real
+        return prediction, float(confidence), float(fake_prob), float(real_prob)
     
     # Use trained LR model
     is_fake, confidence, details = voter.predict(results)
     fake_prob = details['fake_probability']
     real_prob = details['real_probability']
+    
+    # Sanity check: if LR model contradicts average scores significantly, use Bayesian instead
+    # This protects against poorly trained models
+    avg_fake = np.mean([r.get('fakeScore', 0.5) for r in results])
+    avg_real = np.mean([r.get('realScore', 0.5) for r in results])
+    
+    # If average scores disagree with LR prediction (difference > 0.10), fall back to Bayesian
+    avg_indicates_fake = avg_fake > avg_real
+    lr_predicts_fake = is_fake
+    
+    if avg_indicates_fake != lr_predicts_fake:
+        score_diff = abs(avg_fake - avg_real)
+        if score_diff > 0.10:  # Disagreement threshold lowered to catch more edge cases
+            lr_prediction_str = 'FAKE' if is_fake else 'REAL'
+            print(f"Warning: LR model prediction ({lr_prediction_str}) contradicts average scores (avg_fake={avg_fake:.3f}, avg_real={avg_real:.3f}). Using Bayesian inference.")
+            
+            # Use Bayesian inference instead
+            fake_scores = [r.get('fakeScore', 0.5) for r in results]
+            real_scores = [r.get('realScore', 0.5) for r in results]
+            
+            # Convert to log probabilities for numerical stability
+            log_fake_scores = [np.log(max(s, 1e-10)) for s in fake_scores]
+            log_real_scores = [np.log(max(s, 1e-10)) for s in real_scores]
+            
+            # Sum log probabilities (equivalent to multiplying probabilities)
+            sum_log_fake = np.sum(log_fake_scores)
+            sum_log_real = np.sum(log_real_scores)
+            
+            # Use log-sum-exp trick to compute normalized probabilities
+            max_log = max(sum_log_fake, sum_log_real)
+            
+            exp_fake = np.exp(sum_log_fake - max_log)
+            exp_real = np.exp(sum_log_real - max_log)
+            
+            # Normalize
+            total = exp_fake + exp_real
+            if total > 0:
+                fake_prob = exp_fake / total
+                real_prob = exp_real / total
+            else:
+                fake_prob = 0.5
+                real_prob = 0.5
+            
+            prediction = 'FAKE' if fake_prob > real_prob else 'REAL'
+            confidence = max(fake_prob, real_prob)
+            
+            return prediction, float(confidence), float(fake_prob), float(real_prob)
     
     prediction = 'FAKE' if is_fake else 'REAL'
     
