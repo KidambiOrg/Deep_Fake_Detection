@@ -228,7 +228,7 @@ class LogisticRegressionVoter:
     
     def predict(self, results: List[Dict]) -> Tuple[bool, float, Dict[str, float]]:
         """
-        Make prediction using trained LR meta-classifier.
+        Make prediction using trained LR meta-classifier with calibrated confidence.
         
         Args:
             results: List of detection results from base models
@@ -236,8 +236,8 @@ class LogisticRegressionVoter:
         Returns:
             Tuple of (is_fake, confidence, details)
             - is_fake: Final prediction (True=fake, False=real)
-            - confidence: Confidence score [0-1]
-            - details: Additional information (fake_prob, real_prob, coefficients)
+            - confidence: Calibrated confidence score [0-1]
+            - details: Additional information (fake_prob, real_prob, calibration metrics, coefficients)
         """
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction. Call train() first.")
@@ -253,7 +253,64 @@ class LogisticRegressionVoter:
         is_fake = bool(prediction == 1)
         fake_prob = probabilities[1]
         real_prob = probabilities[0]
-        confidence = max(fake_prob, real_prob)
+        
+        # Calculate base confidence from LR model
+        base_confidence = max(fake_prob, real_prob)
+        
+        # === CONFIDENCE CALIBRATION ===
+        # The LR model can be overconfident. We calibrate based on:
+        # 1. Voting consensus (how many models agree?)
+        # 2. Score separation (how different are avg fake vs real?)
+        # 3. Model agreement (how much variance in predictions?)
+        
+        fake_scores = [r.get('fakeScore', 0.5) for r in results]
+        real_scores = [r.get('realScore', 0.5) for r in results]
+        
+        # 1. Voting consensus factor
+        predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' 
+                       for r in results]
+        majority_votes = predictions.count('FAKE' if is_fake else 'REAL')
+        consensus_ratio = majority_votes / len(results) if len(results) > 0 else 0.5
+        
+        # 2. Score separation factor
+        avg_fake = np.mean(fake_scores) if len(fake_scores) > 0 else 0.5
+        avg_real = np.mean(real_scores) if len(real_scores) > 0 else 0.5
+        score_diff = abs(avg_fake - avg_real)
+        
+        # 3. Model agreement factor (inverse of variance)
+        score_variance = np.std(fake_scores) if len(fake_scores) > 1 else 0.0
+        agreement_factor = 1.0 - min(score_variance, 0.3) / 0.3  # Normalize to [0.7, 1.0]
+        
+        # Compute calibration score as weighted combination
+        # - Consensus ratio (40%): Strong agreement increases confidence
+        # - Score difference (40%): Large separation increases confidence
+        # - Agreement factor (20%): Low variance increases confidence
+        calibration = (
+            0.40 * consensus_ratio +
+            0.40 * score_diff +
+            0.20 * agreement_factor
+        )
+        
+        # Apply tiered calibration floor based on consensus strength
+        # This ensures confidence reflects actual model agreement
+        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
+            calibration = max(calibration, 0.70)  # 85% confidence floor
+        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
+            calibration = max(calibration, 0.60)  # 80% confidence floor
+        elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
+            calibration = max(calibration, 0.50)  # 75% confidence floor
+        # else: use natural calibration for very close votes (4-4 or similar)
+        
+        # Apply calibration to base confidence
+        # Map base_confidence [0.5, 1.0] using calibration factor
+        # Higher calibration = trust LR model more
+        # Lower calibration = reduce confidence toward 50%
+        if base_confidence > 0.5:
+            calibrated_confidence = 0.5 + (base_confidence - 0.5) * calibration
+        else:
+            calibrated_confidence = base_confidence
+        
+        confidence = float(calibrated_confidence)
         
         # Get model coefficients (learned weights)
         coefficients = {}
@@ -268,6 +325,14 @@ class LogisticRegressionVoter:
         details = {
             'fake_probability': float(fake_prob),
             'real_probability': float(real_prob),
+            'base_confidence': float(base_confidence),
+            'calibrated_confidence': float(confidence),
+            'calibration_metrics': {
+                'consensus_ratio': float(consensus_ratio),
+                'score_difference': float(score_diff),
+                'agreement_factor': float(agreement_factor),
+                'calibration_score': float(calibration)
+            },
             'model_coefficients': coefficients,
             'intercept': float(self.model.intercept_[0])
         }
@@ -379,8 +444,45 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
             real_prob = 0.5
         
         # Make prediction based on which probability is higher
+        base_confidence = max(fake_prob, real_prob)
+        
+        # === APPLY CALIBRATION (same as trained LR model) ===
+        # Calculate calibration factors
+        predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' 
+                       for r in results]
+        is_fake = fake_prob > real_prob
+        majority_votes = predictions.count('FAKE' if is_fake else 'REAL')
+        consensus_ratio = majority_votes / len(results) if len(results) > 0 else 0.5
+        
+        avg_fake = np.mean(fake_scores) if len(fake_scores) > 0 else 0.5
+        avg_real = np.mean(real_scores) if len(real_scores) > 0 else 0.5
+        score_diff = abs(avg_fake - avg_real)
+        
+        score_variance = np.std(fake_scores) if len(fake_scores) > 1 else 0.0
+        agreement_factor = 1.0 - min(score_variance, 0.3) / 0.3
+        
+        calibration = (
+            0.40 * consensus_ratio +
+            0.40 * score_diff +
+            0.20 * agreement_factor
+        )
+        
+        # Apply tiered calibration floor based on consensus strength
+        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
+            calibration = max(calibration, 0.70)  # 85% confidence floor
+        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
+            calibration = max(calibration, 0.60)  # 80% confidence floor
+        elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
+            calibration = max(calibration, 0.50)  # 75% confidence floor
+        # else: use natural calibration for very close votes
+        
+        # Apply calibration to base confidence
+        if base_confidence > 0.5:
+            confidence = 0.5 + (base_confidence - 0.5) * calibration
+        else:
+            confidence = base_confidence
+        
         prediction = 'FAKE' if fake_prob > real_prob else 'REAL'
-        confidence = max(fake_prob, real_prob)
         
         return prediction, float(confidence), float(fake_prob), float(real_prob)
     
@@ -431,8 +533,44 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
                 fake_prob = 0.5
                 real_prob = 0.5
             
+            base_confidence = max(fake_prob, real_prob)
+            
+            # === APPLY CALIBRATION ===
+            predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' 
+                           for r in results]
+            is_fake_pred = fake_prob > real_prob
+            majority_votes = predictions.count('FAKE' if is_fake_pred else 'REAL')
+            consensus_ratio = majority_votes / len(results) if len(results) > 0 else 0.5
+            
+            avg_fake_sc = np.mean(fake_scores) if len(fake_scores) > 0 else 0.5
+            avg_real_sc = np.mean(real_scores) if len(real_scores) > 0 else 0.5
+            score_diff_sc = abs(avg_fake_sc - avg_real_sc)
+            
+            score_variance_sc = np.std(fake_scores) if len(fake_scores) > 1 else 0.0
+            agreement_factor_sc = 1.0 - min(score_variance_sc, 0.3) / 0.3
+            
+            calibration_sc = (
+                0.40 * consensus_ratio +
+                0.40 * score_diff_sc +
+                0.20 * agreement_factor_sc
+            )
+            
+            # Apply tiered calibration floor based on consensus strength
+            if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
+                calibration_sc = max(calibration_sc, 0.70)  # 85% confidence floor
+            elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
+                calibration_sc = max(calibration_sc, 0.60)  # 80% confidence floor
+            elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
+                calibration_sc = max(calibration_sc, 0.50)  # 75% confidence floor
+            # else: use natural calibration for very close votes
+            
+            # Apply calibration to base confidence
+            if base_confidence > 0.5:
+                confidence = 0.5 + (base_confidence - 0.5) * calibration_sc
+            else:
+                confidence = base_confidence
+            
             prediction = 'FAKE' if fake_prob > real_prob else 'REAL'
-            confidence = max(fake_prob, real_prob)
             
             return prediction, float(confidence), float(fake_prob), float(real_prob)
     
