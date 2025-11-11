@@ -120,6 +120,40 @@ def load_nonescape_model():
     _nonescape_model = model
     return model, _device
 
+
+def convert_image_to_tensor(image_path: str) -> torch.Tensor:
+    """
+    Convert image file to PyTorch tensor.
+    
+    Unified preprocessing: File Path → PIL Image → Tensor [C, H, W] in RGB, range [0, 255]
+    
+    Args:
+        image_path: File path to image
+        
+    Returns:
+        PyTorch tensor [C, H, W] in RGB format, range [0, 255], dtype uint8
+    """
+    from PIL import ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    
+    # Load image from file path
+    image = Image.open(image_path)
+    image.load()
+    
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert PIL to tensor
+    import torchvision.transforms.functional as F
+    tensor = F.to_tensor(image)  # [C, H, W], float32 [0, 1]
+    
+    # Convert to uint8 [0, 255]
+    tensor = (tensor * 255).to(torch.uint8)
+    
+    return tensor
+
+
 def detect_with_nonescape_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the NoEscape model.
@@ -142,19 +176,16 @@ def detect_with_nonescape_tool(image_path: str) -> dict:
         model, device = load_nonescape_model()
         
         logger.info("Preprocessing image...")
-        # Load image from file path
-        from PIL import ImageFile
+        # STEP 1: Convert file to tensor
+        tensor = convert_image_to_tensor(image_path)
+        
+        # STEP 2: Convert tensor to PIL for transforms
+        import torchvision.transforms.functional as F
+        tensor_float = tensor.to(torch.float32) / 255.0  # [C, H, W] float32 [0, 1]
+        image = F.to_pil_image(tensor_float)
+        
+        # STEP 3: Apply model-specific transforms (Resize 256 -> CenterCrop 224 -> JPEG compression)
         from torchvision.transforms import v2 as T
-        
-        ImageFile.LOAD_TRUNCATED_IMAGES = True
-        
-        image = Image.open(image_path)
-        image.load()
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # EXACT transforms from imagedetectionlib (Resize 256 -> CenterCrop 224 -> JPEG compression)
         transform = T.Compose([
             T.ToImage(),
             T.Resize(256),

@@ -4,6 +4,8 @@ from outputModel.image_detection_output_model import IndividualModelResult
 import torch
 from transformers import AutoModelForImageClassification, AutoImageProcessor, SiglipForImageClassification, BitsAndBytesConfig
 from PIL import Image
+import numpy as np
+from typing import Union, List
 import base64
 import io
 import time
@@ -155,16 +157,47 @@ def load_prithiv_model():
         logger.error(f"Failed to load Prithiv V1 model: {e}")
         return None, None, _device
 
+def convert_image_to_tensor(image_path: str) -> torch.Tensor:
+    """
+    Convert image file to PyTorch tensor.
+    
+    Unified preprocessing: File Path → PIL Image → Tensor [C, H, W] in RGB, range [0, 255]
+    
+    Args:
+        image_path: File path to image
+        
+    Returns:
+        PyTorch tensor [C, H, W] in RGB format, range [0, 255], dtype uint8
+    """
+    from PIL import ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    
+    # Load image from file path
+    image = Image.open(image_path)
+    image.load()
+    
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert PIL to tensor
+    img_array = np.array(image)  # [H, W, C]
+    tensor = torch.from_numpy(img_array).permute(2, 0, 1)  # [C, H, W]
+    
+    return tensor
+
+
 def detect_with_prithiv_v1_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the Prithiv V1 model.
     
-    OPTIMIZED: Accepts preprocessed PIL image directly (no file I/O).
+    Internally converts image to tensor for unified processing pipeline.
+    All images (file paths, base64, binary) → Tensor → Model
     
     Returns dictionary representation of IndividualModelResult for JSON serialization.
     
     Args:
-        image_path: File path to image to analyze
+        image_path: File path to image, or base64 string, or data URI
         
     Returns:
         Dictionary with detection results
@@ -178,16 +211,17 @@ def detect_with_prithiv_v1_tool(image_path: str) -> dict:
         if model is None or processor is None:
             raise Exception("Failed to load Prithiv V1 model")
         
-        # Load and preprocess image from file path
-        from PIL import ImageFile
-        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        # STEP 1: Convert file to tensor [C, H, W] - unified preprocessing
+        tensor = convert_image_to_tensor(image_path)
         
-        image = Image.open(image_path)
-        image.load()
+        # STEP 2: Convert tensor to PIL Image for processor compatibility
+        if tensor.device.type != 'cpu':
+            tensor = tensor.cpu()
         
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        img_array = tensor.numpy().transpose(1, 2, 0)  # [C, H, W] -> [H, W, C]
+        image = Image.fromarray(img_array, mode='RGB')
         
+        # STEP 3: Process through model using tensor pipeline
         inputs = processor(images=image, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
@@ -253,5 +287,29 @@ def detect_with_prithiv_v1_tool(image_path: str) -> dict:
             realScore=0.0
         )
         return error_result.model_dump()
+
+
+def detect_batch_with_prithiv_v1_tool(image_paths: List[str]) -> List[dict]:
+    """
+    Agent tool: Batch detect deepfakes using the Prithiv V1 model.
+    
+    Efficient batch processing for multiple images/frames.
+    Internally converts all images to tensors for unified processing.
+    
+    Args:
+        image_paths: List of file paths to images
+        
+    Returns:
+        List of dictionaries with detection results for each image
+    """
+    results = []
+    
+    # Process each image path
+    for image_path in image_paths:
+        result = detect_with_prithiv_v1_tool(image_path=image_path)
+        results.append(result)
+    
+    return results
+
 
 

@@ -120,6 +120,40 @@ def load_dima_model():
         logger.error(f"Failed to load DimaVit model: {e}")
         return None, None, _device
 
+
+def convert_image_to_tensor(image_path: str) -> torch.Tensor:
+    """
+    Convert image file to PyTorch tensor.
+    
+    Unified preprocessing: File Path → PIL Image → Tensor [C, H, W] in RGB, range [0, 255]
+    
+    Args:
+        image_path: File path to image
+        
+    Returns:
+        PyTorch tensor [C, H, W] in RGB format, range [0, 255], dtype uint8
+    """
+    from PIL import ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    
+    # Load image from file path
+    image = Image.open(image_path)
+    image.load()
+    
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert PIL to tensor
+    import torchvision.transforms.functional as F
+    tensor = F.to_tensor(image)  # [C, H, W], float32 [0, 1]
+    
+    # Convert to uint8 [0, 255]
+    tensor = (tensor * 255).to(torch.uint8)
+    
+    return tensor
+
+
 def detect_with_dima_vit_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the DimaVit model.
@@ -141,16 +175,15 @@ def detect_with_dima_vit_tool(image_path: str) -> dict:
         if model is None or processor is None:
             raise Exception("Failed to load DimaVit model")
         
-        # Load and preprocess image from file path
-        from PIL import ImageFile
-        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        # STEP 1: Convert file to tensor
+        tensor = convert_image_to_tensor(image_path)
         
-        image = Image.open(image_path)
-        image.load()
+        # STEP 2: Convert tensor to PIL for processor
+        import torchvision.transforms.functional as F
+        tensor_float = tensor.to(torch.float32) / 255.0  # [C, H, W] float32 [0, 1]
+        image = F.to_pil_image(tensor_float)
         
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
+        # STEP 3: Process through model processor
         inputs = processor(images=image, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
         

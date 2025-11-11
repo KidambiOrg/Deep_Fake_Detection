@@ -139,6 +139,36 @@ def load_mobilenetv2_cnn_model():
         logger.error(f"Failed to load MobileNetV2 CNN model: {e}", exc_info=True)
         return None
 
+
+def convert_image_to_numpy(image_path: str) -> np.ndarray:
+    """
+    Convert image file to NumPy array for TensorFlow models.
+    
+    Unified preprocessing: File Path → PIL Image → NumPy [H, W, C] in RGB, range [0, 255]
+    
+    Args:
+        image_path: File path to image
+        
+    Returns:
+        NumPy array [H, W, C] in RGB format, range [0, 255], dtype uint8
+    """
+    from PIL import ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    
+    # Load image from file path
+    image = Image.open(image_path)
+    image.load()
+    
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert PIL to numpy
+    img_array = np.array(image)  # [H, W, C]
+    
+    return img_array
+
+
 def detect_with_mobilenetv2_cnn_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the MobileNetV2 CNN model.
@@ -165,15 +195,8 @@ def detect_with_mobilenetv2_cnn_tool(image_path: str) -> dict:
             raise Exception(error_msg)
         
         logger.info("Preprocessing image...")
-        # Load and preprocess image from file path
-        from PIL import ImageFile
-        ImageFile.LOAD_TRUNCATED_IMAGES = True
-        
-        image = Image.open(image_path).convert('RGB')
-        image.load()
-        
-        # Convert PIL to numpy array
-        img_array = np.array(image)
+        # STEP 1: Convert file to numpy array
+        img_array = convert_image_to_numpy(image_path)
         
         # Resize to 224x224 (model input size)
         img_resized = cv2.resize(img_array, (224, 224))

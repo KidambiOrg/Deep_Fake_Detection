@@ -385,6 +385,40 @@ def load_seresnet50_model():
         logger.error(f"Failed to load SEResNet50 model: {e}", exc_info=True)
         return None, _device
 
+
+def convert_image_to_tensor(image_path: str) -> torch.Tensor:
+    """
+    Convert image file to PyTorch tensor.
+    
+    Unified preprocessing: File Path → PIL Image → Tensor [C, H, W] in RGB, range [0, 255]
+    
+    Args:
+        image_path: File path to image
+        
+    Returns:
+        PyTorch tensor [C, H, W] in RGB format, range [0, 255], dtype uint8
+    """
+    from PIL import ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    
+    # Load image from file path
+    image = Image.open(image_path)
+    image.load()
+    
+    # Convert to RGB if needed
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+    
+    # Convert PIL to tensor
+    import torchvision.transforms.functional as F
+    tensor = F.to_tensor(image)  # [C, H, W], float32 [0, 1]
+    
+    # Convert to uint8 [0, 255]
+    tensor = (tensor * 255).to(torch.uint8)
+    
+    return tensor
+
+
 def detect_with_seresnet50_tool(image_path: str) -> dict:
     """
     Agent tool: Detect deepfakes using the SEResNet50 model.
@@ -411,24 +445,23 @@ def detect_with_seresnet50_tool(image_path: str) -> dict:
             raise Exception(error_msg)
         
         logger.info("Preprocessing image...")
-        # Load and preprocess image from file path
-        from PIL import ImageFile
-        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        # STEP 1: Convert file to tensor
+        tensor = convert_image_to_tensor(image_path)
         
-        image = Image.open(image_path)
-        image.load()
+        # STEP 2: Convert tensor to PIL for transforms
+        import torchvision.transforms.functional as F
+        tensor_float = tensor.to(torch.float32) / 255.0  # [C, H, W] float32 [0, 1]
+        image = F.to_pil_image(tensor_float)
         
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
+        # STEP 3: Apply model-specific transforms
         transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
-        tensor = transform(image)
-        image_tensor = tensor.unsqueeze(0).to(device)
+        tensor_processed = transform(image)
+        image_tensor = tensor_processed.unsqueeze(0).to(device)
         
         logger.info("Running inference...")
         # Run inference
