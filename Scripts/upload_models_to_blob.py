@@ -278,6 +278,36 @@ class ModelUploader:
         print("="*80 + "\n")
         
         return total_successful, total_failed
+    
+    def upload_lr_voting_model(self, force=False, dry_run=False):
+        """
+        Upload the LR meta-classifier (voting model) to blob storage.
+        This is separate from detection models.
+        
+        Args:
+            force: Force upload even if blob exists
+            dry_run: Don't actually upload
+            
+        Returns:
+            Tuple of (successful_count, failed_count)
+        """
+        print("\n" + "="*80)
+        print("Uploading LR Meta-Classifier (Voting Model)")
+        print("="*80 + "\n")
+        
+        container_name = "models"
+        blob_name = "LrVotingModel/lr_meta_classifier.pkl"
+        local_path = "Models/LrVotingModel/lr_meta_classifier.pkl"
+        
+        print("📦 LR Meta-Classifier (Logistic Regression Voting Model)")
+        print("   Used internally by ensemble voting to combine model predictions")
+        
+        if self.upload_file(local_path, container_name, blob_name, force, dry_run):
+            print("\n✓ LR voting model uploaded successfully")
+            return (1, 0)
+        else:
+            print("\n✗ Failed to upload LR voting model")
+            return (0, 1)
 
 
 def main():
@@ -336,14 +366,33 @@ Examples:
             connection_string=args.connection_string
         )
         
-        # Upload models
+        # Upload detection models from registry
         successful, failed = uploader.upload_models_from_registry(
             force=args.force,
             dry_run=args.dry_run
         )
         
+        # Upload LR voting model (not in registry, separate internal model)
+        lr_successful, lr_failed = uploader.upload_lr_voting_model(
+            force=args.force,
+            dry_run=args.dry_run
+        )
+        
+        # Combine results
+        total_successful = successful + lr_successful
+        total_failed = failed + lr_failed
+        
+        # Final summary
+        print("\n" + "="*80)
+        print("FINAL SUMMARY")
+        print("="*80)
+        print(f"✓ Total Successful: {total_successful}")
+        print(f"✗ Total Failed: {total_failed}")
+        print(f"📦 Grand Total: {total_successful + total_failed}")
+        print("="*80 + "\n")
+        
         # Exit with appropriate code
-        if failed > 0:
+        if total_failed > 0:
             sys.exit(1)
         else:
             sys.exit(0)

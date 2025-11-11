@@ -321,13 +321,23 @@ class BlobStorageModelLoader:
             return None
     
     def clear_cache(self):
-        """Clear the local model cache"""
+        """
+        Clear the local model cache.
+        This includes all cached models:
+        - Image detection models (HuggingFace, MobileNet, etc.)
+        - LR meta-classifier (voting model)
+        """
         import shutil
         try:
             if self.cache_dir and self.cache_dir.exists():
+                # Log what's being cleared
+                cache_size = sum(f.stat().st_size for f in self.cache_dir.rglob('*') if f.is_file())
+                cache_size_mb = cache_size / (1024 * 1024)
+                logger.info(f"Clearing model cache ({cache_size_mb:.2f} MB): {self.cache_dir}")
+                
                 shutil.rmtree(self.cache_dir)
                 self.cache_dir.mkdir(parents=True, exist_ok=True)
-                logger.info("Model cache cleared")
+                logger.info("Model cache cleared (includes all image models and LR voting model)")
         except Exception as e:
             logger.error(f"Failed to clear cache: {e}")
 

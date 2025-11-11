@@ -14,6 +14,7 @@ This script:
    - Prithiv Open Deepfake (prithiv-open-deep-fake)
 3. Trains LR meta-classifier on the results (16 features: 8 models × 2 scores each)
 4. Saves the trained model
+5. Uploads the model to Azure Blob Storage
 
 Folder structure:
 - fake_folder: All images are FAKE
@@ -32,6 +33,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.logistic_regression_voter import LogisticRegressionVoter
 from Agents import run_image_detection_workflow
+from azure.storage.blob import BlobServiceClient
+from azure.identity import DefaultAzureCredential
 
 
 async def collect_predictions(image_path: str, timeout: int = 120):
@@ -228,7 +231,8 @@ async def main():
     print("   Using optimized hyperparameters with L1 regularization...")
     voter = LogisticRegressionVoter(use_tuning=True)
     
-    save_path = Path(__file__).parent.parent / 'Models' / 'lr_meta_classifier.pkl'
+    save_path = Path(__file__).parent.parent / 'Models' / 'LrVotingModel' / 'lr_meta_classifier.pkl'
+    save_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
     metrics = voter.train(training_data, save_path=str(save_path), use_cross_validation=True)
     
     # Step 3: Show results
@@ -294,6 +298,75 @@ async def main():
         print("\n⚠ FAIR: Accuracy >= 70%, consider collecting more training data")
     else:
         print("\n⚠ LOW: Accuracy < 70%, recommend collecting more diverse training data")
+    
+    # Step 5: Upload to Azure Blob Storage
+    print("\n" + "="*80)
+    print("Uploading Model to Azure Blob Storage")
+    print("="*80)
+    
+    try:
+        await upload_model_to_blob(save_path)
+    except Exception as e:
+        print(f"\n⚠️  Warning: Failed to upload model to blob storage: {e}")
+        print("   Model is saved locally but not uploaded to cloud.")
+        print("   You can manually upload later using upload_models_to_blob.py")
+
+
+async def upload_model_to_blob(model_path: Path):
+    """
+    Upload the trained LR model to Azure Blob Storage.
+    
+    Args:
+        model_path: Path to the trained model file
+    """
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    storage_account_name = os.environ.get("STORAGE_ACCOUNT_NAME")
+    
+    if not storage_account_name:
+        print("   ⚠️  STORAGE_ACCOUNT_NAME not configured, skipping upload")
+        return
+    
+    try:
+        print(f"   Connecting to storage account: {storage_account_name}")
+        credential = DefaultAzureCredential()
+        account_url = f"https://{storage_account_name}.blob.core.windows.net"
+        blob_service_client = BlobServiceClient(
+            account_url=account_url,
+            credential=credential
+        )
+        
+        container_name = "models"
+        blob_name = "LrVotingModel/lr_meta_classifier.pkl"
+        
+        # Ensure container exists
+        container_client = blob_service_client.get_container_client(container_name)
+        if not container_client.exists():
+            container_client.create_container()
+            print(f"   ✓ Created container: {container_name}")
+        
+        # Upload the file
+        blob_client = blob_service_client.get_blob_client(
+            container=container_name,
+            blob=blob_name
+        )
+        
+        file_size = os.path.getsize(model_path)
+        size_mb = file_size / (1024 * 1024)
+        
+        print(f"   ⬆️  Uploading: {blob_name} ({size_mb:.2f} MB)...", end=" ")
+        
+        with open(model_path, "rb") as data:
+            blob_client.upload_blob(data, overwrite=True)
+        
+        print("✓ Done")
+        print(f"   ✓ Model uploaded to: {container_name}/{blob_name}")
+        print("   ✓ Model is now available in cloud storage")
+        
+    except Exception as e:
+        print(f"✗ Failed")
+        raise e
 
 
 if __name__ == '__main__':

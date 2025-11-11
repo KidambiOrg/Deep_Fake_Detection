@@ -367,25 +367,73 @@ class LogisticRegressionVoter:
 
 # Global instance for production use
 _lr_voter = None
-_lr_voter_path = Path(__file__).parent.parent / 'Models' / 'lr_meta_classifier.pkl'
+_lr_voter_path = Path(__file__).parent.parent / 'Models' / 'LrVotingModel' / 'lr_meta_classifier.pkl'
+
+# Blob storage configuration for LR model
+_lr_blob_container = 'models'
+_lr_blob_name = 'LrVotingModel/lr_meta_classifier.pkl'
 
 
 def get_lr_voter() -> LogisticRegressionVoter:
     """
     Get or create the global LR voter instance.
-    Loads from disk if available, otherwise returns untrained instance.
+    Loading priority:
+    1. Check local Models folder (for development)
+    2. Check cache
+    3. Download from blob storage to cache
+    4. Return untrained instance (fallback)
     """
     global _lr_voter
     
     if _lr_voter is None:
         _lr_voter = LogisticRegressionVoter()
         
-        # Try to load pre-trained model
+        # Priority 1: Try local Models folder first (development/local)
         if _lr_voter_path.exists():
             try:
                 _lr_voter.load(str(_lr_voter_path))
+                print(f"Loaded LR voter from local Models folder: {_lr_voter_path}")
+                return _lr_voter
             except Exception as e:
-                print(f"Warning: Could not load pre-trained LR voter: {e}")
+                print(f"Warning: Could not load LR voter from Models folder: {e}")
+        
+        # Priority 2 & 3: Try cache, download from blob if needed
+        try:
+            from utils.blob_storage_helper import get_blob_loader
+            import tempfile
+            
+            blob_loader = get_blob_loader()
+            cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
+            cached_model_path = cache_dir / "LrVotingModel" / "lr_meta_classifier.pkl"
+            
+            # Check if already in cache
+            if cached_model_path.exists():
+                try:
+                    _lr_voter.load(str(cached_model_path))
+                    print(f"Loaded LR voter from cache: {cached_model_path}")
+                    return _lr_voter
+                except Exception as e:
+                    print(f"Warning: Cached LR model corrupted, will re-download: {e}")
+                    # Delete corrupted cache file
+                    cached_model_path.unlink(missing_ok=True)
+            
+            # Not in cache, download from blob
+            print(f"LR voter not in cache, downloading from blob storage...")
+            downloaded_path = blob_loader.download_model(
+                container_name=_lr_blob_container,
+                blob_name=_lr_blob_name,
+                force_download=False
+            )
+            
+            if downloaded_path and Path(downloaded_path).exists():
+                _lr_voter.load(str(downloaded_path))
+                print(f"Loaded LR voter from blob storage (cached at: {downloaded_path})")
+                return _lr_voter
+            else:
+                print("Warning: Failed to download LR voter from blob storage")
+                
+        except Exception as e:
+            print(f"Warning: Could not load LR voter from cache/blob: {e}")
     
     return _lr_voter
 
