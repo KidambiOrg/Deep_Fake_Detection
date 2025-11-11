@@ -25,9 +25,11 @@ debugpy
 tensorflow
 tensorflow-datasets
 keras
+tf_keras
 scikit-learn
 nltk
 python-dotenv
+deepface
 
 # Azure AI Foundry
 azure-ai-projects

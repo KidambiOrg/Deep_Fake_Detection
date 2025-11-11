@@ -9,6 +9,9 @@ __pycache__/
 # Deep Fake models director
 Models/ 
 TextModels/
+VideoModels/
+Video_Models/RetinaFace/.deepface/weights/retinaface.h5
+Video_Models/VGG/.deepface/weights/vgg_face_weights.h5
 Data/LLM.csv
 Tests/comprehensive_voting_analysis.py
 Tests/enhanced_models.py
@@ -19,6 +22,8 @@ Tests/test_models_comparison.py
 Tests/test_multiple_inputs.py
 Tests/test_nonescape_model.py
 Tests/test_seresnet50_integration.py
+create_sample_dataset.py
+kill_port_7071.cmd
 
 # Distribution / packaging
 .Python
@@ -233,5 +238,4 @@ __azurite_db*__.json
 
 .python_packages
  
-create_sample_dataset.py
-kill_port_7071.cmd
+
