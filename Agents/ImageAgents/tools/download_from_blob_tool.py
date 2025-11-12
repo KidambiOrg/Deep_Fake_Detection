@@ -126,7 +126,7 @@ def download_model_from_blob(
 def download_multiple_models(
     model_configs: List[Dict[str, str]],
     force_download: bool = True,
-    max_workers: int = 5
+    max_workers: int = 8
 ) -> Dict[str, Any]:
     """
     Download multiple models from Azure Blob Storage in parallel.

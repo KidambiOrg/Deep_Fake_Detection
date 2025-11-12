@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "STORAGE_ACCOUNT_NAME": "deepfakemodels",
+    "PYTHONWARNINGS": "ignore",
+    "AzureWebJobsDisableHomepage": "true",
+    "AZURE_FUNCTIONS_ENVIRONMENT": "Development",
+    "PYTHON_ENABLE_WORKER_EXTENSIONS": "0",
+    "FUNCTIONS_WORKER_PROCESS_COUNT": "1"
+  },
+  "Host": {
+    "LocalHttpPort": 7071,
+    "CORS": "*"
+  }
+}

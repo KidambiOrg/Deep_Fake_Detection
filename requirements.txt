@@ -29,7 +29,7 @@ tf_keras
 scikit-learn
 nltk
 python-dotenv
-deepface
+#mediapipe
 
 # Azure AI Foundry
 azure-ai-projects

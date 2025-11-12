@@ -12,6 +12,11 @@ TextModels/
 VideoModels/
 Video_Models/RetinaFace/.deepface/weights/retinaface.h5
 Video_Models/VGG/.deepface/weights/vgg_face_weights.h5
+Video_Models/Mediapipe/blaze_face_short_range.tflite
+Video_Models/OpenCV_DNN/deploy.prototxt
+Video_Models/OpenCV_DNN/res10_300x300_ssd_iter_140000.caffemodel
+Video_Models/RetinaFace/.deepface/weights/facenet_weights.h5
+Video_Models/RetinaFace/.deepface/weights/vgg_face_weights.h5
 Data/LLM.csv
 Tests/comprehensive_voting_analysis.py
 Tests/enhanced_models.py
@@ -229,7 +234,7 @@ __marimo__/
 bin
 obj
 appsettings.json
-local.settings.json
+#local.settings.json
 
 # Azurite artifacts
 __blobstorage__
@@ -238,4 +243,5 @@ __azurite_db*__.json
 
 .python_packages
  
+
 

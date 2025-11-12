@@ -539,20 +539,50 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
     fake_prob = details['fake_probability']
     real_prob = details['real_probability']
     
-    # Sanity check: if LR model contradicts average scores significantly, use Bayesian instead
+    # Sanity check: if LR model contradicts average scores or voting consensus, use Bayesian instead
     # This protects against poorly trained models
     avg_fake = np.mean([r.get('fakeScore', 0.5) for r in results])
     avg_real = np.mean([r.get('realScore', 0.5) for r in results])
     
-    # If average scores disagree with LR prediction (difference > 0.10), fall back to Bayesian
+    # Count actual votes
+    predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' for r in results]
+    fake_votes = predictions.count('FAKE')
+    real_votes = predictions.count('REAL')
+    
+    # If average scores disagree with LR prediction, fall back to Bayesian
     avg_indicates_fake = avg_fake > avg_real
     lr_predicts_fake = is_fake
     
+    # Trigger Bayesian fallback if ANY of these conditions are met:
+    # 1. Average scores disagree with LR by more than 3% (lowered from 10%)
+    # 2. Strong voting consensus (5+ models) disagrees with LR prediction
+    # 3. Very high confidence fake predictions (3+ models with >90% fake) but LR says REAL
+    should_use_bayesian = False
+    
     if avg_indicates_fake != lr_predicts_fake:
         score_diff = abs(avg_fake - avg_real)
-        if score_diff > 0.10:  # Disagreement threshold lowered to catch more edge cases
+        if score_diff > 0.03:  # Lowered from 0.10 to 0.03 (3%)
+            should_use_bayesian = True
             lr_prediction_str = 'FAKE' if is_fake else 'REAL'
-            print(f"Warning: LR model prediction ({lr_prediction_str}) contradicts average scores (avg_fake={avg_fake:.3f}, avg_real={avg_real:.3f}). Using Bayesian inference.")
+            print(f"Warning: LR model prediction ({lr_prediction_str}) contradicts average scores (avg_fake={avg_fake:.3f}, avg_real={avg_real:.3f}, diff={score_diff:.3f}). Using Bayesian inference.")
+    
+    # Check voting consensus override
+    if not should_use_bayesian:
+        if fake_votes >= 5 and not lr_predicts_fake:
+            should_use_bayesian = True
+            print(f"Warning: LR model predicts REAL but {fake_votes}/8 models predict FAKE. Using Bayesian inference.")
+        elif real_votes >= 5 and lr_predicts_fake:
+            should_use_bayesian = True
+            print(f"Warning: LR model predicts FAKE but {real_votes}/8 models predict REAL. Using Bayesian inference.")
+    
+    # Check high-confidence predictions override
+    if not should_use_bayesian and not lr_predicts_fake:
+        high_conf_fake_count = sum(1 for r in results if r.get('fakeScore', 0) > 0.90)
+        if high_conf_fake_count >= 3:
+            should_use_bayesian = True
+            print(f"Warning: LR model predicts REAL but {high_conf_fake_count} models have >90% fake confidence. Using Bayesian inference.")
+    
+    if should_use_bayesian:
             
             # Use Bayesian inference instead
             fake_scores = [r.get('fakeScore', 0.5) for r in results]

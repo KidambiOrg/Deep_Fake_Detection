@@ -14,28 +14,17 @@
       "Worker": "Warning"
     }
   },
-  "functionTimeout": "00:30:00",
-  "watchDirectories": [],
-  "watchFiles": [],
+  "functionTimeout": "-1",
   "extensions": {
     "http": {
       "routePrefix": "v1.0",
       "maxOutstandingRequests": 200,
       "maxConcurrentRequests": 100,
       "dynamicThrottlesEnabled": true
-    },
-    "mcp": {
-      "instructions": "Deepfake Detection MCP Server - Provides tools for detecting deepfakes in images and text, including model listing and analysis capabilities.",
-      "serverName": "DeepfakeDetectionServer",
-      "serverVersion": "1.0.0",
-      "encryptClientState": true,
-      "messageOptions": {
-        "useAbsoluteUriForEndpoint": false
-      }
     }
   },
   "extensionBundle": {
-    "id": "Microsoft.Azure.Functions.ExtensionBundle.Experimental",
-    "version": "[4.0.0, 5.0.0)"    
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
   }
 }

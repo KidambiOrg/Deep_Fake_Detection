@@ -29,3 +29,11 @@ Tests/
 Scripts/
 examples/
 UI/
+outputModel/
+Prompts/
+Video_Models/
+node_modules/
+*.md
+LICENSE
+AGENTS.md
+*.cmd

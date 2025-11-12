@@ -5,6 +5,16 @@ import sys
 import warnings
 import asyncio
 
+# Fix protobuf import issue with Azure Functions Core Tools
+# The bundled protobuf in core tools is old and missing runtime_version
+try:
+    import google.protobuf
+    # Add runtime_version if missing (workaround for old bundled protobuf)
+    if not hasattr(google.protobuf, 'runtime_version'):
+        google.protobuf.runtime_version = lambda: "5.27.2"
+except Exception:
+    pass
+
 # Suppress protobuf module cache warnings
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=DeprecationWarning)
