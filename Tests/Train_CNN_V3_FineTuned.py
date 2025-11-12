@@ -1,18 +1,17 @@
 """
 Training script for CNN V3 FineTuned model based on InceptionResNetV2
-This script trains a deepfake detection model using transfer learning
+This script trains a deepfake detection model using transfer learning with native TensorFlow tensors
 Credit: https://github.com/THULASISANDEEP/Fake-Image-Detection-using-Deep-Learning
 """
 
 import os
-import cv2
+import tensorflow as tf
 import numpy as np
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.applications import InceptionResNetV2
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import threading
 
 # Thread-safe model saving lock
@@ -29,7 +28,7 @@ EPOCHS = 100
 
 def load_and_preprocess_images(image_folder, label):
     """
-    Load and preprocess images from a folder
+    Load and preprocess images from a folder using native TensorFlow operations
     
     Args:
         image_folder: Path to folder containing images
@@ -53,14 +52,21 @@ def load_and_preprocess_images(image_folder, label):
         img_path = os.path.join(image_folder, img_file)
         
         try:
-            img = cv2.imread(img_path)
-            if img is None:
-                continue
-                
-            img = cv2.resize(img, IMAGE_SIZE)
-            img = img.astype('float32') / 255.0
+            # Read and decode image using TensorFlow
+            img_bytes = tf.io.read_file(img_path)
+            img = tf.image.decode_image(img_bytes, channels=3, expand_animations=False)
             
-            images.append(img)
+            # Ensure correct shape
+            img = tf.ensure_shape(img, [None, None, 3])
+            
+            # Resize using TensorFlow
+            img = tf.image.resize(img, IMAGE_SIZE)
+            
+            # Normalize to [0, 1]
+            img = tf.cast(img, tf.float32) / 255.0
+            
+            # Convert to numpy for compatibility with train_test_split
+            images.append(img.numpy())
             labels.append(label)
             
         except Exception as e:
@@ -144,23 +150,39 @@ def main():
     model = build_model()
     model.summary()
     
-    # Data augmentation for training
-    datagen = ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        shear_range=0.2,
-        zoom_range=0.2,
-        horizontal_flip=True,
-        fill_mode='nearest'
-    )
-    datagen.fit(X_train)
+    # Create augmented dataset using tf.data
+    train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+    train_dataset = train_dataset.shuffle(buffer_size=len(X_train))
+    train_dataset = train_dataset.batch(BATCH_SIZE)
+    
+    # Apply augmentation using map
+    def augment(image, label):
+        # Random rotation
+        image = tf.image.rot90(image, k=tf.random.uniform([], 0, 4, dtype=tf.int32))
+        # Random flip
+        image = tf.image.random_flip_left_right(image)
+        image = tf.image.random_flip_up_down(image)
+        # Random brightness
+        image = tf.image.random_brightness(image, max_delta=0.1)
+        # Random contrast
+        image = tf.image.random_contrast(image, lower=0.9, upper=1.1)
+        # Clip values to [0, 1]
+        image = tf.clip_by_value(image, 0.0, 1.0)
+        return image, label
+    
+    train_dataset = train_dataset.map(augment, num_parallel_calls=tf.data.AUTOTUNE)
+    train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
+    
+    # Create validation dataset
+    val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val))
+    val_dataset = val_dataset.batch(BATCH_SIZE)
+    val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
     
     # Train model
     print(f"\nStarting training for {EPOCHS} epochs...")
     history = model.fit(
-        datagen.flow(X_train, y_train, batch_size=BATCH_SIZE),
-        validation_data=(X_val, y_val),
+        train_dataset,
+        validation_data=val_dataset,
         epochs=EPOCHS
     )
     

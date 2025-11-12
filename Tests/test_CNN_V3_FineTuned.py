@@ -6,8 +6,7 @@ Usage: python test_CNN_V3_FineTuned.py <image_path>
 
 import os
 import sys
-import cv2
-import numpy as np
+import tensorflow as tf
 from tensorflow.keras.models import load_model
 from pydantic import BaseModel, Field
 import threading
@@ -29,26 +28,36 @@ IMAGE_SIZE = (224, 224)
 MODEL_PATH = r"Models\CNN_V3_FineTuned\cnn_v3_finetuned_model.keras"
 
 
-def preprocess_image(image_path: str) -> np.ndarray:
+def preprocess_image(image_path: str) -> tf.Tensor:
     """
-    Load and preprocess a single image
+    Load and preprocess a single image using native TensorFlow operations
     
     Args:
         image_path: Path to the image file
     
     Returns:
-        Preprocessed image array ready for model input
+        Preprocessed TensorFlow tensor ready for model input
     """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
     
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Failed to load image: {image_path}")
+    # Read image file as bytes
+    img_bytes = tf.io.read_file(image_path)
     
-    img = cv2.resize(img, IMAGE_SIZE)
-    img = img.astype('float32') / 255.0
-    img = np.expand_dims(img, axis=0)
+    # Decode image (automatically detects format: JPEG, PNG, etc.)
+    img = tf.image.decode_image(img_bytes, channels=3, expand_animations=False)
+    
+    # Ensure image has correct shape
+    img = tf.ensure_shape(img, [None, None, 3])
+    
+    # Resize to target size
+    img = tf.image.resize(img, IMAGE_SIZE)
+    
+    # Normalize to [0, 1]
+    img = tf.cast(img, tf.float32) / 255.0
+    
+    # Add batch dimension
+    img = tf.expand_dims(img, axis=0)
     
     return img
 
