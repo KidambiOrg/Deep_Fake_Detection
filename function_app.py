@@ -255,7 +255,7 @@ async def analyze_image(req: func.HttpRequest) -> func.HttpResponse:
         # This uses a trained LR model from Models/lr_meta_classifier.pkl
         # The meta-classifier learns optimal combination weights from training data
         threshold = 0.20
-        voting_method = 'logistic_regression'  # LR meta-classifier ensemble
+        voting_method = 'bayesian'  # LR meta-classifier ensemble
        
         
         # Run Agent Framework concurrent workflow with file reference
