@@ -161,7 +161,7 @@ async def run_image_detection_workflow(
             organika_sdxl_agent,
             mobilenetv2_agent,
             mobilenetv2_cnn_agent,
-            cnn_v3_agent,
+            #cnn_v3_agent,
             prithiv_open_deep_fake_agent
         ]).with_aggregator(custom_aggregator).build()
         

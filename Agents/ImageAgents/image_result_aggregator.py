@@ -373,34 +373,38 @@ def apply_ensemble_voting(
             confidence = max(avg_fake_score, avg_real_score)
     
     elif voting_method == 'bayesian':
-        prior_fake = 0.5
-        log_likelihood_fake = 0.0
-        log_likelihood_real = 0.0
+        # Modified Bayesian voting that combines:
+        # 1. Vote count (democratic component)
+        # 2. Average score strength (confidence component)
+        # This prevents extreme outliers from dominating the result
         
-        for result in individual_results:
-            # Use actual fake and real scores, not the confidence value
-            fake_score = result.fakeScore
-            real_score = result.realScore
-            
-            # Add log probabilities for Bayesian inference
-            # Each model provides P(prediction|fake) and P(prediction|real)
-            log_likelihood_fake += np.log(fake_score + 1e-10)
-            log_likelihood_real += np.log(real_score + 1e-10)
+        # Calculate vote-based probability (majority rule component)
+        vote_prob_fake = fake_votes / len(individual_results)
+        vote_prob_real = real_votes / len(individual_results)
         
-        likelihood_fake = np.exp(log_likelihood_fake)
-        likelihood_real = np.exp(log_likelihood_real)
+        # Calculate score-based probability (average confidence component)
+        score_prob_fake = avg_fake_score
+        score_prob_real = avg_real_score
         
-        evidence = likelihood_fake * prior_fake + likelihood_real * (1 - prior_fake)
-        if evidence > 0:
-            posterior_fake = (likelihood_fake * prior_fake) / evidence
-            posterior_real = (likelihood_real * (1 - prior_fake)) / evidence
+        # Combine vote probability and score probability using geometric mean
+        # This gives balanced weight to both factors
+        combined_fake = np.sqrt(vote_prob_fake * score_prob_fake)
+        combined_real = np.sqrt(vote_prob_real * score_prob_real)
+        
+        # Normalize to get final posteriors
+        total = combined_fake + combined_real
+        if total > 0:
+            posterior_fake = combined_fake / total
+            posterior_real = combined_real / total
         else:
-            posterior_fake = prior_fake
-            posterior_real = 1 - prior_fake
+            posterior_fake = 0.5
+            posterior_real = 0.5
         
-        is_deepfake = posterior_fake >= threshold
-        # Confidence should be the higher posterior probability
-        confidence = max(posterior_fake, posterior_real)
+        # Make prediction based on which posterior is higher
+        is_deepfake = posterior_fake > posterior_real
+        
+        # Confidence is the probability of the predicted class
+        confidence = posterior_fake if is_deepfake else posterior_real
     
     elif voting_method == 'entropy_weighted':
         weighted_fake_sum = 0.0

@@ -30,6 +30,8 @@ scikit-learn
 nltk
 python-dotenv
 #mediapipe
+streamlit
+plotly
 
 # Azure AI Foundry
 azure-ai-projects
