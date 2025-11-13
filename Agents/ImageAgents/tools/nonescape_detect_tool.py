@@ -18,10 +18,63 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Import the actual Nonescape model from imagedetectionlib
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from imagedetectionlib.detect_deepfake_nonescape import NonescapeClassifier
+# Import transformers for DINOv2
+try:
+    from transformers import Dinov2Model, Dinov2Config
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logger.warning("transformers library not available. Full NonescapeClassifier will not work.")
+
+
+class NonescapeClassifier(nn.Module):
+    """
+    ViT/EfficientNet-based fake image detector
+    
+    Uses a vision transformer (DINOv2) as backbone with EfficientNet v2 to compute
+    attention maps for the ViT features.
+    
+    CREDIT: Adapted from the Nonescape repository by Aedili Labs (https://github.com/aediliclabs/nonescape)
+    """
+    
+    def __init__(self, num_classes: int = 2, num_heads: int = 16, num_queries: int = 128):
+        super().__init__()
+        
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers library required for full NonescapeClassifier. Install with: pip install transformers")
+        
+        self.embedding_size = 1024
+        self.num_queries = num_queries
+        
+        vit_backbone = Dinov2Model(Dinov2Config.from_pretrained("facebook/dinov2-large"))
+        efficientnet = models.efficientnet_v2_l(weights=None, num_classes=num_queries * self.embedding_size)
+        self.vit_backbone = vit_backbone
+        self.query_net = efficientnet
+        self.key_net = nn.Linear(self.embedding_size, self.embedding_size)
+        self.value_net = nn.Linear(self.embedding_size, self.embedding_size)
+        self.attention = nn.MultiheadAttention(self.embedding_size, num_heads=num_heads, batch_first=True)
+        self.head = nn.Linear(self.embedding_size, num_classes)
+        
+        self.register_buffer("_input_mean", torch.empty((3, 1, 1)))
+        self.register_buffer("_input_std", torch.empty((3, 1, 1)))
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B = x.shape[0]
+        
+        with torch.no_grad():
+            vit_output = self.vit_backbone(x)
+            vit_features = vit_output.last_hidden_state
+        
+        q = self.query_net.forward(x).reshape(B, self.num_queries, -1)
+        k = self.key_net.forward(vit_features)
+        v = self.value_net.forward(vit_features)
+        
+        emb, _ = self.attention.forward(q, k, v)
+        emb = emb.mean(dim=1)
+        logits = self.head(emb.squeeze(1))
+        probs = nn.functional.softmax(logits, dim=-1)
+        
+        return probs
 
 # Global model cache
 _nonescape_model = None
