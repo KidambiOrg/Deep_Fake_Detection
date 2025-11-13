@@ -37,7 +37,7 @@
 
 # # Constants
 # IMAGE_SIZE = (224, 224)
-# MODEL_PATH = r"Models\CNN_V3_FineTuned\cnn_v3_finetuned_model.keras"
+# MODEL_PATH = r"Models\CNN_V3_FineTuned\cnn_v3_finetuned_DenseNet_model.keras"
 
 
 # def load_cnn_v3_model(model_path: str | None = None):

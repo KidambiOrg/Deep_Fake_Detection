@@ -136,12 +136,12 @@ MODEL_REGISTRY = {
     
     'cnn_v3_finetuned': {
         'name': 'CNN V3 Fine-tuned',
-        'display_name': 'CNN V3 FineTuned Detector',
-        'description': 'Custom CNN V3 architecture fine-tuned for deepfake detection',
-        'architecture': 'CNN_V3',
+        'display_name': 'CNN V3 DenseNet201 Detector',
+        'description': 'DenseNet201-based model fine-tuned for subtle deepfake artifact detection',
+        'architecture': 'DenseNet201',
         'source': 'cnn_v3',
         'model_type': 'finetuned',
-        'model_path': 'Models/CNN_V3_FineTuned/cnn_v3_finetuned_model.keras',
+        'model_path': 'Models/CNN_V3_FineTuned/cnn_v3_finetuned_DenseNet_model.keras',
         'recommended_threshold': 0.5,
         'output_format': 'single_sigmoid',
         'label_convention': '>0.5=REAL, <=0.5=FAKE',

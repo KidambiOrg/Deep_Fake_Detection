@@ -1,9 +1,8 @@
-"""CNN V3 FineTuned detection tool with blob storage caching."""
+"""CNN V3 DenseNet201 detection tool with blob storage caching."""
 
 from outputModel.image_detection_output_model import IndividualModelResult
 import tensorflow as tf
 from tensorflow import keras
-from PIL import Image
 import numpy as np
 from typing import List
 import time
@@ -12,7 +11,6 @@ import logging
 import tempfile
 import hashlib
 from pathlib import Path
-import cv2
 import threading
 
 logger = logging.getLogger(__name__)
@@ -22,11 +20,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Global model cache and thread-safe lock
 _cnn_v3_model = None
-_cnn_v3_quantized_model = None
 _model_lock = threading.Lock()
-
-# Quantization support flag
-USE_QUANTIZATION = os.getenv('CNN_V3_USE_QUANTIZATION', 'false').lower() == 'true'
 
 def get_cached_model_path(model_key: str, blob_config: dict) -> str:
     """
@@ -48,7 +42,7 @@ def get_cached_model_path(model_key: str, blob_config: dict) -> str:
             
             if blob_loader and blob_loader.blob_service_client:
                 # Try .keras format (primary)
-                filename = 'cnn_v3_finetuned_model.keras'
+                filename = 'cnn_v3_finetuned_DenseNet_model.keras'
                 blob_path = f"{blob_config['path']}/{filename}"
                 
                 downloaded_path = blob_loader.download_model(
@@ -69,9 +63,9 @@ def get_cached_model_path(model_key: str, blob_config: dict) -> str:
         
         # If failed, return expected cache path (will fail gracefully in caller)
         cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-        blob_path = f"{blob_config['container']}/{blob_config['path']}/cnn_v3_finetuned_model.keras"
+        blob_path = f"{blob_config['container']}/{blob_config['path']}/cnn_v3_finetuned_DenseNet_model.keras"
         path_hash = hashlib.md5(blob_path.encode()).hexdigest()
-        cache_path = cache_dir / f"{path_hash}_cnn_v3_finetuned_model.keras"
+        cache_path = cache_dir / f"{path_hash}_cnn_v3_finetuned_DenseNet_model.keras"
         logger.error(f"Failed to get model {model_key} - returning fallback path")
         return str(cache_path)
     
@@ -79,56 +73,10 @@ def get_cached_model_path(model_key: str, blob_config: dict) -> str:
     logger.error(f"No blob configuration provided for {model_key}")
     return ""
 
-def apply_quantization(model):
-    """
-    Apply post-training quantization to the model for faster inference.
-    
-    Note: TensorFlow/Keras models can be quantized using TFLite converter.
-    For now, we return the original model as quantization requires conversion
-    to TFLite format which changes the inference API.
-    
-    Args:
-        model: Loaded Keras model
-        
-    Returns:
-        Quantized model (or original if quantization not supported/enabled)
-    """
-    global _cnn_v3_quantized_model
-    
-    if _cnn_v3_quantized_model is not None:
-        return _cnn_v3_quantized_model
-    
-    if not USE_QUANTIZATION:
-        logger.info("Quantization disabled (set CNN_V3_USE_QUANTIZATION=true to enable)")
-        return model
-    
-    try:
-        logger.info("Applying post-training quantization...")
-        
-        # Note: Full quantization requires TFLite converter
-        # For Keras models, we can use mixed precision for inference speedup
-        # This is a lighter alternative to full quantization
-        
-        # Enable mixed precision (uses float16 where possible)
-        from tensorflow.keras import mixed_precision
-        policy = mixed_precision.Policy('mixed_float16')
-        mixed_precision.set_global_policy(policy)
-        
-        logger.info("✓ Enabled mixed precision (float16) for faster inference")
-        _cnn_v3_quantized_model = model
-        return model
-        
-    except Exception as e:
-        logger.warning(f"Failed to apply quantization: {e}")
-        logger.info("Falling back to original model")
-        return model
-
-
 def load_cnn_v3_model():
     """
-    Load CNN V3 FineTuned model (thread-safe).
+    Load CNN V3 DenseNet model (thread-safe).
     Tries multiple locations (local, cache, blob).
-    Applies quantization if enabled.
     """
     global _cnn_v3_model
     
@@ -142,7 +90,7 @@ def load_cnn_v3_model():
             # Try local paths first
             script_dir = Path(__file__).parent.parent.parent
             local_paths = [
-                script_dir / "Models" / "CNN_V3_FineTuned" / "cnn_v3_finetuned_model.keras",
+                script_dir / "Models" / "CNN_V3_FineTuned" / "cnn_v3_finetuned_DenseNet_model.keras",
             ]
             
             model_path = None
@@ -165,7 +113,7 @@ def load_cnn_v3_model():
                 raise FileNotFoundError(
                     f"CNN V3 FineTuned model not found at: {model_path}\n"
                     f"Please ensure the model file exists in Models/CNN_V3_FineTuned/ folder.\n"
-                    f"Expected file: cnn_v3_finetuned_model.keras"
+                    f"Expected file: cnn_v3_finetuned_DenseNet_model.keras"
                 )
             
             logger.info(f"Loading model from: {model_path}")
@@ -180,47 +128,37 @@ def load_cnn_v3_model():
                 metrics=['accuracy']
             )
             
-            # Apply quantization if enabled
-            model = apply_quantization(model)
-            
             _cnn_v3_model = model
-            logger.info(f"✓ Loaded CNN V3 FineTuned model successfully")
+            logger.info(f"✓ Loaded CNN V3 DenseNet model successfully")
             logger.info(f"Model input shape: {model.input_shape}")
             logger.info(f"Model output shape: {model.output_shape}")
             
-            return model
+            return _cnn_v3_model
             
         except Exception as e:
             logger.error(f"Failed to load CNN V3 FineTuned model: {e}", exc_info=True)
             return None
 
-def convert_image_to_numpy(image_path: str) -> np.ndarray:
+def preprocess_image_for_densenet(image_path: str) -> np.ndarray:
     """
-    Convert image file to NumPy array for TensorFlow models.
-    
-    Unified preprocessing: File Path → PIL Image → NumPy [H, W, C] in RGB, range [0, 255]
+    Preprocess image for DenseNet model using TensorFlow operations.
+    Matches the exact preprocessing used during training.
     
     Args:
         image_path: File path to image
         
     Returns:
-        NumPy array [H, W, C] in RGB format, range [0, 255], dtype uint8
+        Preprocessed image tensor ready for model inference [1, 224, 224, 3], float32, range [0, 1]
     """
-    from PIL import ImageFile
-    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    # Use TensorFlow operations (same as training)
+    img_bytes = tf.io.read_file(image_path)
+    img = tf.image.decode_image(img_bytes, channels=3, expand_animations=False)
+    img = tf.ensure_shape(img, [None, None, 3])
+    img = tf.image.resize(img, (224, 224))
+    img = tf.cast(img, tf.float32) / 255.0
+    img = tf.expand_dims(img, axis=0)
     
-    # Load image from file path
-    image = Image.open(image_path)
-    image.load()
-    
-    # Convert to RGB if needed
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    # Convert PIL to numpy
-    img_array = np.array(image)  # [H, W, C]
-    
-    return img_array
+    return img.numpy()
 
 
 def detect_with_cnn_v3_tool(image_path: str) -> dict:
@@ -237,27 +175,18 @@ def detect_with_cnn_v3_tool(image_path: str) -> dict:
     start_time = time.time()
     
     try:
-        logger.info("Loading CNN V3 FineTuned model...")
+        logger.info("Loading CNN V3 DenseNet model...")
         # Load model (uses cache if available, thread-safe)
         model = load_cnn_v3_model()
         
         if model is None:
-            error_msg = "Failed to load CNN V3 FineTuned model - model file may be missing"
+            error_msg = "Failed to load CNN V3 DenseNet model - model file may be missing"
             logger.error(error_msg)
             raise Exception(error_msg)
         
         logger.info("Preprocessing image...")
-        # STEP 1: Convert file to numpy array
-        img_array = convert_image_to_numpy(image_path)
-        
-        # Resize to 224x224 (model input size)
-        img_resized = cv2.resize(img_array, (224, 224))
-        
-        # Normalize to [0, 1] range
-        img_normalized = img_resized / 255.0
-        
-        # Add batch dimension
-        img_batch = np.expand_dims(img_normalized, axis=0)
+        # Preprocess using TensorFlow (matches training preprocessing exactly)
+        img_batch = preprocess_image_for_densenet(image_path)
         
         logger.info("Running inference...")
         # Run inference (thread-safe with prediction lock)
@@ -265,24 +194,28 @@ def detect_with_cnn_v3_tool(image_path: str) -> dict:
             prediction = model.predict(img_batch, verbose=0)[0]
         
         # Handle output format:
-        # CNN V3 model outputs single value: >0.5 = REAL, <=0.5 = FAKE
-        if len(prediction.shape) == 0 or prediction.shape[0] == 1:
-            # Single output: probability of REAL
-            real_prob = float(prediction) if len(prediction.shape) == 0 else float(prediction[0])
-            fake_prob = 1.0 - real_prob
+        # DenseNet model outputs single sigmoid value: >0.5 = REAL, <=0.5 = FAKE
+        # raw_score represents the probability of being REAL (matches training evaluation)
+        THRESHOLD = 0.5
+        raw_score = float(prediction[0]) if len(prediction.shape) > 0 else float(prediction)
+        
+        # Determine prediction based on threshold
+        is_real = raw_score > THRESHOLD
+        prediction_label = 'REAL' if is_real else 'FAKE'
+        
+        # Calculate confidence and probabilities
+        if is_real:
+            confidence = raw_score
+            real_prob = raw_score
+            fake_prob = 1.0 - raw_score
         else:
-            # Two outputs: [prob_real, prob_fake]
-            real_prob = float(prediction[0])
-            fake_prob = float(prediction[1])
+            confidence = 1.0 - raw_score
+            real_prob = raw_score
+            fake_prob = 1.0 - raw_score
         
         processing_time = time.time() - start_time
         
-        # Determine prediction
-        is_deepfake = fake_prob > real_prob
-        confidence = max(fake_prob, real_prob)
-        prediction_label = 'FAKE' if is_deepfake else 'REAL'
-        
-        logger.info(f"CNN V3 prediction: {prediction_label} (confidence: {confidence:.2f})")
+        logger.info(f"CNN V3 DenseNet prediction: {prediction_label} (confidence: {confidence:.2f}, raw_score: {raw_score:.4f}, threshold: {THRESHOLD})")
         
         # Return as dictionary
         result = IndividualModelResult(
