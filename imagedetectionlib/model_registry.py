@@ -82,22 +82,22 @@ MODEL_REGISTRY = {
     },
     
     
-    # SEResNet-50 Models    
-    'seresnet50': {
-        'name': 'SEResNet-50 Fine-tuned',
-        'display_name': 'SEResNet50 Detector',
-        'description': 'SEResNet-50 fine-tuned for deepfake detection',
-        'architecture': 'SEResNet-50',
-        'source': 'seresnet50',
-        'model_type': 'pretrained',  # Changed from 'complete' to 'pretrained'
-        'model_path': 'Models/SERESNet_50/seresnet50_pretrained.pth',  # Use pretrained weights
-        'recommended_threshold': 0.5,
-        'local_path': 'Models/SERESNet_50',  # Directory containing all model files
-        'blob_storage': {
-            'container': 'models',
-            'path': 'SERESNet_50'  # Upload entire directory
-        }
-    },
+    # SEResNet-50 Models - COMMENTED OUT for LR training
+    # 'seresnet50': {
+    #     'name': 'SEResNet-50 Fine-tuned',
+    #     'display_name': 'SEResNet50 Detector',
+    #     'description': 'SEResNet-50 fine-tuned for deepfake detection',
+    #     'architecture': 'SEResNet-50',
+    #     'source': 'seresnet50',
+    #     'model_type': 'pretrained',  # Changed from 'complete' to 'pretrained'
+    #     'model_path': 'Models/SERESNet_50/seresnet50_pretrained.pth',  # Use pretrained weights
+    #     'recommended_threshold': 0.5,
+    #     'local_path': 'Models/SERESNet_50',  # Directory containing all model files
+    #     'blob_storage': {
+    #         'container': 'models',
+    #         'path': 'SERESNet_50'  # Upload entire directory
+    #     }
+    # },
     
     # MobileNetV2 Models
     'mobilenetv2': {

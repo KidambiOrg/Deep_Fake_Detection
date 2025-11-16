@@ -61,9 +61,10 @@ class LogisticRegressionVoter:
             )
         self.scaler = StandardScaler()
         # Model order for 8 models (16 features)
-        self.model_order = ['nonescape-full', 'seresnet50', 'prithiv-v1', 
+        # NOTE: seresnet50 COMMENTED OUT for LR training
+        self.model_order = ['nonescape-full', 'prithiv-v1', 
                            'dima-vit', 'organika-sdxl', 'mobilenetv2', 'mobilenetv2_cnn', 
-                           'prithiv-open-deep-fake']
+                           'cnn_v3_finetuned', 'prithiv-open-deep-fake']
         self.is_trained = False
     
     def _extract_features(self, results: List[Dict]) -> np.ndarray:
@@ -293,13 +294,15 @@ class LogisticRegressionVoter:
         
         # Apply tiered calibration floor based on consensus strength
         # This ensures confidence reflects actual model agreement
-        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
-            calibration = max(calibration, 0.70)  # 85% confidence floor
-        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
-            calibration = max(calibration, 0.60)  # 80% confidence floor
-        elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
-            calibration = max(calibration, 0.50)  # 75% confidence floor
-        # else: use natural calibration for very close votes (4-4 or similar)
+        if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
+            calibration = max(calibration, 0.70)  # High confidence floor
+        elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
+            calibration = max(calibration, 0.60)  # Good confidence floor
+        elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
+            calibration = max(calibration, 0.55)  # Moderate confidence floor
+        elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
+            calibration = max(calibration, 0.55)  # Moderate confidence floor
+        # else: use natural calibration for very close votes (4-5 or worse)
         
         # Apply calibration to base confidence
         # Map base_confidence [0.5, 1.0] using calibration factor
@@ -516,12 +519,14 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
         )
         
         # Apply tiered calibration floor based on consensus strength
-        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
-            calibration = max(calibration, 0.70)  # 85% confidence floor
-        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
-            calibration = max(calibration, 0.60)  # 80% confidence floor
-        elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
-            calibration = max(calibration, 0.50)  # 75% confidence floor
+        if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
+            calibration = max(calibration, 0.70)  # High confidence floor
+        elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
+            calibration = max(calibration, 0.60)  # Good confidence floor
+        elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
+            calibration = max(calibration, 0.55)  # Moderate confidence floor
+        elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
+            calibration = max(calibration, 0.55)  # Moderate confidence floor
         # else: use natural calibration for very close votes
         
         # Apply calibration to base confidence
@@ -634,12 +639,14 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
             )
             
             # Apply tiered calibration floor based on consensus strength
-            if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
-                calibration_sc = max(calibration_sc, 0.70)  # 85% confidence floor
-            elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
-                calibration_sc = max(calibration_sc, 0.60)  # 80% confidence floor
-            elif consensus_ratio >= 0.625:  # Weak majority (5 models agree)
-                calibration_sc = max(calibration_sc, 0.50)  # 75% confidence floor
+            if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
+                calibration_sc = max(calibration_sc, 0.70)  # High confidence floor
+            elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
+                calibration_sc = max(calibration_sc, 0.60)  # Good confidence floor
+            elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
+                calibration_sc = max(calibration_sc, 0.55)  # Moderate confidence floor
+            elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
+                calibration_sc = max(calibration_sc, 0.55)  # Moderate confidence floor
             # else: use natural calibration for very close votes
             
             # Apply calibration to base confidence

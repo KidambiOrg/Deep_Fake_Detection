@@ -14,7 +14,7 @@ Future optimization: Explore base64 encoding or Agent Framework file handling AP
 from agent_framework import ConcurrentBuilder, WorkflowOutputEvent
 from Agents.ImageAgents.image_result_aggregator import create_image_aggregator
 from Agents.ImageAgents.nonescape_agent import create_nonescape_agent
-from Agents.ImageAgents.seresnet50_agent import create_seresnet50_agent
+# from Agents.ImageAgents.seresnet50_agent import create_seresnet50_agent  # COMMENTED OUT for LR training
 from Agents.ImageAgents.prithiv_v1_agent import create_prithiv_v1_agent
 from Agents.ImageAgents.dima_vit_agent import create_dima_vit_agent
 from Agents.ImageAgents.organika_sdxl_agent import create_organika_sdxl_agent
@@ -48,7 +48,8 @@ def get_or_create_agents():
     Thread-safe initialization prevents duplicate loading.
     
     Returns:
-        Tuple of (nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent)
+        Tuple of (nonescape_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent)
+        NOTE: seresnet50_agent COMMENTED OUT for LR training
     """
     global _cached_agents
     
@@ -68,7 +69,7 @@ def get_or_create_agents():
         
         # Create agents once - each agent's tool will also cache its model
         nonescape_agent = create_nonescape_agent()
-        seresnet50_agent = create_seresnet50_agent()
+        # seresnet50_agent = create_seresnet50_agent()  # COMMENTED OUT for LR training
         prithiv_v1_agent = create_prithiv_v1_agent()
         dima_vit_agent = create_dima_vit_agent()
         organika_sdxl_agent = create_organika_sdxl_agent()
@@ -80,7 +81,7 @@ def get_or_create_agents():
         # Cache the agents globally
         _cached_agents = (
             nonescape_agent,
-            seresnet50_agent,
+            # seresnet50_agent,  # COMMENTED OUT for LR training
             prithiv_v1_agent,
             dima_vit_agent,
             organika_sdxl_agent,
@@ -129,7 +130,8 @@ async def run_image_detection_workflow(
     try:
         # Get or create detection agents (cached to avoid recreating on every request)
         logger.info("Getting detection agents...")
-        nonescape_agent, seresnet50_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent = get_or_create_agents()
+        nonescape_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent = get_or_create_agents()
+        # seresnet50_agent COMMENTED OUT for LR training
         
         # Validate image_path exists
         if not image_path:
@@ -155,7 +157,7 @@ async def run_image_detection_workflow(
         logger.info("Building concurrent workflow...")
         workflow = ConcurrentBuilder().participants([
             nonescape_agent,
-            seresnet50_agent,
+            # seresnet50_agent,  # COMMENTED OUT for LR training
             prithiv_v1_agent,
             dima_vit_agent,
             organika_sdxl_agent,
