@@ -1,9 +1,10 @@
-"""Prithiv Open Deepfake detection tool with blob storage caching and 8-bit quantization."""
+"""Prithiv Open Deepfake detection tool with blob storage caching."""
 
 from outputModel.image_detection_output_model import IndividualModelResult
 import torch
-from transformers import AutoModelForImageClassification, AutoImageProcessor, SiglipForImageClassification, BitsAndBytesConfig
+from transformers import AutoModelForImageClassification, AutoImageProcessor, SiglipForImageClassification
 from PIL import Image
+from typing import Optional
 import base64
 import io
 import time
@@ -20,17 +21,15 @@ _prithiv_open_model = None
 _prithiv_open_processor = None
 _device = None
 
-def get_cached_model_directory(model_key: str, blob_config: dict) -> str:
+def get_cached_model_directory(model_key: str, blob_config: dict, required_files: Optional[list] = None) -> str:
     """
     Get cached model directory or download from blob storage.
-    Priority: Cache → Blob download to cache
-    
-    Note: blob_storage_helper now handles cache checking internally,
-    so we just delegate to it directly (no double checking).
+    Priority: Cache (validated) → Blob download to cache
     
     Args:
         model_key: Model key identifier
         blob_config: Blob storage configuration with blob_prefix
+        required_files: List of required files to validate cache (e.g., ['config.json', 'preprocessor_config.json'])
         
     Returns:
         Local directory path to model in cache
@@ -42,13 +41,33 @@ def get_cached_model_directory(model_key: str, blob_config: dict) -> str:
             blob_loader = get_blob_loader()
             
             if blob_loader and blob_loader.blob_service_client:
-                # download_directory now checks cache first internally
+                # First check if cache exists and is valid
+                cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
+                blob_prefix_normalized = blob_config['blob_prefix'].replace('/', os.sep)
+                local_dir = cache_dir / blob_config['container'] / blob_prefix_normalized
+                
+                # Validate cache - check if all required files exist
+                force_download = False
+                if local_dir.exists() and required_files:
+                    missing_files = [f for f in required_files if not (local_dir / f).exists()]
+                    if missing_files:
+                        logger.warning(f"Cache incomplete for {model_key}, missing: {missing_files}. Re-downloading...")
+                        force_download = True
+                
+                # Download with validation (force if cache is incomplete)
                 downloaded_path = blob_loader.download_directory(
                     container_name=blob_config['container'],
-                    blob_prefix=blob_config['blob_prefix']
+                    blob_prefix=blob_config['blob_prefix'],
+                    force_download=force_download
                 )
                 
                 if downloaded_path:
+                    # Final validation after download
+                    if required_files:
+                        missing_files = [f for f in required_files if not (Path(downloaded_path) / f).exists()]
+                        if missing_files:
+                            logger.error(f"Downloaded model still missing files: {missing_files}")
+                            return ""
                     return str(downloaded_path)
                 else:
                     logger.warning(f"Failed to get {model_key} from cache or blob storage")
@@ -86,7 +105,10 @@ def load_prithiv_open_model():
         'blob_prefix': 'huggingface/prithiv_open_deep_fake'
     }
     
-    model_path = get_cached_model_directory('prithiv-open-deep-fake', blob_config)
+    # Required files for HuggingFace model to load properly
+    required_files = ['config.json', 'preprocessor_config.json', 'model.safetensors']
+    
+    model_path = get_cached_model_directory('prithiv-open-deep-fake', blob_config, required_files)
     
     if not model_path or not os.path.exists(model_path):
         logger.error(f"Model not found in cache or blob storage")
@@ -111,31 +133,14 @@ def load_prithiv_open_model():
                 logger.error(f"Failed to load processor: {e2}")
                 return None, None, _device
         
-        # Configure 8-bit quantization for memory efficiency
-        # Only use quantization on CUDA devices (not CPU)
-        quantization_config = None
-        if _device.type == 'cuda':
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=True,
-                llm_int8_threshold=6.0  # Default threshold for stability
-            )
-            logger.info("✓ Using 8-bit quantization (50% memory reduction)")
-        
         # Try SigLIP architecture first (more accurate for this model)
         model_loaded = False
         try:
-            if quantization_config:
-                model = SiglipForImageClassification.from_pretrained(
-                    model_path,
-                    quantization_config=quantization_config,
-                    device_map="auto"
-                )
-            else:
-                model = SiglipForImageClassification.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float32
-                )
-                model = model.to(_device)
+            model = SiglipForImageClassification.from_pretrained(
+                model_path,
+                torch_dtype=torch.float32
+            )
+            model = model.to(_device)
             logger.info("✓ Using SiglipForImageClassification (optimal for Prithiv Open)")
             model_loaded = True
         except Exception as e:
@@ -143,18 +148,11 @@ def load_prithiv_open_model():
         
         # Fallback to AutoModel
         if not model_loaded:
-            if quantization_config:
-                model = AutoModelForImageClassification.from_pretrained(
-                    model_path,
-                    quantization_config=quantization_config,
-                    device_map="auto"
-                )
-            else:
-                model = AutoModelForImageClassification.from_pretrained(
-                    model_path,
-                    torch_dtype=torch.float32
-                )
-                model = model.to(_device)
+            model = AutoModelForImageClassification.from_pretrained(
+                model_path,
+                torch_dtype=torch.float32
+            )
+            model = model.to(_device)
             logger.info("Using AutoModelForImageClassification (fallback)")
         
         model.eval()
