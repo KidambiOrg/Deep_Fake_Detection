@@ -5,16 +5,18 @@ This script:
 1. Loads images from separate fake and real folders
 2. Runs detection to get base model predictions from all 8 models:
    - NoEscape (nonescape-full)
-   - SEResNet50 (seresnet50)
    - Prithiv V1 (prithiv-v1)
    - DimaVit (dima-vit)
    - Organika SDXL (organika-sdxl)
    - MobileNetV2 (mobilenetv2)
    - MobileNetV2 CNN (mobilenetv2_cnn)
+   - CNN V3 Finetuned (cnn_v3_finetuned)
    - Prithiv Open Deepfake (prithiv-open-deep-fake)
 3. Trains LR meta-classifier on the results (16 features: 8 models × 2 scores each)
 4. Saves the trained model
 5. Uploads the model to Azure Blob Storage
+
+NOTE: SEResNet50 is NOT included in training (commented out in model_order)
 
 Folder structure:
 - fake_folder: All images are FAKE
@@ -107,7 +109,7 @@ async def collect_predictions(image_path: str, timeout: int = 120):
 async def collect_training_data(
     fake_folder: str, 
     real_folder: str, 
-    max_images_per_class: int = 100
+    max_images_per_class: int = 675
 ) -> List[Tuple[List[Dict], bool]]:
     """
     Collect training data from separate fake and real folders.
@@ -197,9 +199,10 @@ async def main():
     # Process images per class for good training data
     # With 8 models running concurrently per image:
     # - 100 images per class (~2-3 hours total)
-    # - 500 images per class (~8-12 hours total) - recommended for production
+    # - 500 images per class (~8-12 hours total)
+    # - 675 images per class (uses all available: 675 fake, 675 real) - best accuracy
     # This balances training time with having enough samples for reliable LR weights
-    max_images_per_class = 500
+    max_images_per_class = 675
     
     # Step 1: Collect training data
     print("\n1. Collecting training data from folders...")

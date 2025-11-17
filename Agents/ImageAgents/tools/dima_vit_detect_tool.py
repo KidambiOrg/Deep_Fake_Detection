@@ -193,41 +193,20 @@ def detect_with_dima_vit_tool(image_path: str) -> dict:
             logits = outputs.logits
             probabilities = torch.softmax(logits, dim=1)
             
-            # IMPORTANT: Read labels dynamically from model config (matches imagedetectionlib)
-            # Different models may have different label orders!
-            labels = model.config.id2label
-            logger.info(f"DimaVit model labels: {labels}")
+            # CRITICAL FIX: DimaVit model has SWAPPED labels!
+            # Model config says: 0="Real", 1="Fake"
+            # But actual behavior: high score on 0 means FAKE, high score on 1 means REAL
+            # This has been verified with test images and official HuggingFace model behavior
             
-            # Build scores dictionary
-            scores = {labels[i]: float(probabilities[0][i].cpu()) for i in range(len(labels))}
-            logger.info(f"DimaVit scores: {scores}")
+            # Get raw probabilities
+            prob_0 = float(probabilities[0][0].cpu())  # Config says "Real" but actually means FAKE
+            prob_1 = float(probabilities[0][1].cpu())  # Config says "Fake" but actually means REAL
             
-            # Find fake and real scores by searching for keywords (matches imagedetectionlib logic)
-            fake_prob = 0.0
-            real_prob = 0.0
-            fake_label_found = None
-            real_label_found = None
-            deepfake_indicators = ['fake', 'deepfake', 'artificial', 'generated', 'synthetic', 'ai']
-            real_indicators = ['real', 'authentic', 'genuine', 'human', 'realism']
+            # Swap the labels to match actual behavior
+            fake_prob = prob_0  # Index 0 actually detects FAKE despite label saying "Real"
+            real_prob = prob_1  # Index 1 actually detects REAL despite label saying "Fake"
             
-            for label, score in scores.items():
-                label_lower = label.lower()
-                # Check for fake indicators
-                if not fake_label_found:
-                    for indicator in deepfake_indicators:
-                        if indicator in label_lower:
-                            fake_prob = score
-                            fake_label_found = label
-                            break
-                # Check for real indicators
-                if not real_label_found:
-                    for indicator in real_indicators:
-                        if indicator in label_lower:
-                            real_prob = score
-                            real_label_found = label
-                            break
-            
-            logger.info(f"DimaVit found - Fake: {fake_label_found}={fake_prob:.4f}, Real: {real_label_found}={real_prob:.4f}")
+            logger.info(f"DimaVit scores (CORRECTED for label swap) - Fake: {fake_prob:.4f}, Real: {real_prob:.4f}")
         
         processing_time = time.time() - start_time
         

@@ -468,7 +468,7 @@ def apply_ensemble_voting(
         # Based on sklearn VotingClassifier approach
         # Reference: https://www.geeksforgeeks.org/machine-learning/voting-classifier/
         
-        prediction, confidence, avg_fake, avg_real = apply_logistic_regression_voting(
+        prediction, confidence, fake_prob, real_prob = apply_logistic_regression_voting(
             results=[
                 {
                     'model': r.model,
@@ -481,6 +481,9 @@ def apply_ensemble_voting(
         )
         
         is_deepfake = (prediction == 'FAKE')
+        # Override avg_fake_score and avg_real_score with LR's calculated probabilities
+        avg_fake_score = fake_prob
+        avg_real_score = real_prob
     
     else:
         raise ValueError(f"Unknown voting method: {voting_method}")

@@ -8,12 +8,15 @@ Based on sklearn VotingClassifier approach from:
 https://www.geeksforgeeks.org/machine-learning/voting-classifier/
 """
 
+import logging
 import numpy as np
 import pickle
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+
+logger = logging.getLogger(__name__)
 
 
 class LogisticRegressionVoter:
@@ -294,24 +297,31 @@ class LogisticRegressionVoter:
         
         # Apply tiered calibration floor based on consensus strength
         # This ensures confidence reflects actual model agreement
-        if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
-            calibration = max(calibration, 0.70)  # High confidence floor
-        elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
-            calibration = max(calibration, 0.60)  # Good confidence floor
-        elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
-            calibration = max(calibration, 0.55)  # Moderate confidence floor
-        elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
-            calibration = max(calibration, 0.55)  # Moderate confidence floor
-        # else: use natural calibration for very close votes (4-5 or worse)
+        # For 8 models: 8=100%, 7=87.5%, 6=75%, 5=62.5%, 4=50%
+        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
+            calibration = max(calibration, 0.90)  # High confidence floor
+        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
+            calibration = max(calibration, 0.80)  # Good confidence floor
+        elif consensus_ratio >= 0.625:  # Moderate majority (5 models agree)
+            calibration = max(calibration, 0.70)  # Moderate confidence floor
+        elif consensus_ratio >= 0.50:  # Weak majority (4 models agree - tie breaker)
+            calibration = max(calibration, 0.60)  # Low confidence floor
+        # else: no floor for very weak votes (3 or fewer models agree)
         
         # Apply calibration to base confidence
-        # Map base_confidence [0.5, 1.0] using calibration factor
-        # Higher calibration = trust LR model more
-        # Lower calibration = reduce confidence toward 50%
-        if base_confidence > 0.5:
-            calibrated_confidence = 0.5 + (base_confidence - 0.5) * calibration
+        # When models strongly agree (high avg scores + high consensus):
+        # - Use higher of LR confidence or average score confidence
+        # - This ensures confidence reflects the strong model agreement
+        if consensus_ratio >= 0.75 and score_diff >= 0.80:
+            # Very strong agreement: use the higher confidence
+            avg_confidence = avg_fake if is_fake else avg_real
+            calibrated_confidence = max(base_confidence, avg_confidence * calibration)
         else:
-            calibrated_confidence = base_confidence
+            # Normal case: apply calibration to LR confidence
+            if base_confidence > 0.5:
+                calibrated_confidence = 0.5 + (base_confidence - 0.5) * calibration
+            else:
+                calibrated_confidence = base_confidence
         
         confidence = float(calibrated_confidence)
         
@@ -395,10 +405,10 @@ def get_lr_voter() -> LogisticRegressionVoter:
         if _lr_voter_path.exists():
             try:
                 _lr_voter.load(str(_lr_voter_path))
-                print(f"Loaded LR voter from local Models folder: {_lr_voter_path}")
+                logger.info(f"Loaded LR voter from local Models folder: {_lr_voter_path}")
                 return _lr_voter
             except Exception as e:
-                print(f"Warning: Could not load LR voter from Models folder: {e}")
+                logger.warning(f"Could not load LR voter from Models folder: {e}")
         
         # Priority 2 & 3: Try cache, download from blob if needed
         try:
@@ -413,15 +423,15 @@ def get_lr_voter() -> LogisticRegressionVoter:
             if cached_model_path.exists():
                 try:
                     _lr_voter.load(str(cached_model_path))
-                    print(f"Loaded LR voter from cache: {cached_model_path}")
+                    logger.info(f"Loaded LR voter from cache: {cached_model_path}")
                     return _lr_voter
                 except Exception as e:
-                    print(f"Warning: Cached LR model corrupted, will re-download: {e}")
+                    logger.warning(f"Cached LR model corrupted, will re-download: {e}")
                     # Delete corrupted cache file
                     cached_model_path.unlink(missing_ok=True)
             
             # Not in cache, download from blob
-            print(f"LR voter not in cache, downloading from blob storage...")
+            logger.info(f"LR voter not in cache, downloading from blob storage...")
             downloaded_path = blob_loader.download_model(
                 container_name=_lr_blob_container,
                 blob_name=_lr_blob_name,
@@ -430,23 +440,24 @@ def get_lr_voter() -> LogisticRegressionVoter:
             
             if downloaded_path and Path(downloaded_path).exists():
                 _lr_voter.load(str(downloaded_path))
-                print(f"Loaded LR voter from blob storage (cached at: {downloaded_path})")
+                logger.info(f"Loaded LR voter from blob storage (cached at: {downloaded_path})")
                 return _lr_voter
             else:
-                print("Warning: Failed to download LR voter from blob storage")
+                logger.warning("Failed to download LR voter from blob storage")
                 
         except Exception as e:
-            print(f"Warning: Could not load LR voter from cache/blob: {e}")
+            logger.warning(f"Could not load LR voter from cache/blob: {e}")
     
     return _lr_voter
 
 
 def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, float, float]:
     """
-    Apply logistic regression meta-classifier voting.
+    Apply hybrid voting strategy:
+    1. If majority exists (5+ votes): Use weighted average of winning side
+    2. If tied (4-4): Use LR model as tiebreaker
     
-    This is a stacking approach where a trained Logistic Regression model
-    learns to optimally combine the predictions from all base models.
+    This ensures predictions respect voting consensus while using LR for edge cases.
     
     Args:
         results: List of detection results from base models
@@ -454,11 +465,77 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
     Returns:
         Tuple of (prediction, confidence, fake_score, real_score)
     """
+    # Count votes
+    predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' for r in results]
+    fake_votes = predictions.count('FAKE')
+    real_votes = predictions.count('REAL')
+    total_votes = len(results)
+    
+    fake_scores = [r.get('fakeScore', 0.5) for r in results]
+    real_scores = [r.get('realScore', 0.5) for r in results]
+    confidences = [r.get('confidence', 0.5) for r in results]
+    
+    # CASE 1: Clear majority exists (5+ votes for one side)
+    if fake_votes >= 5 or real_votes >= 5:
+        logger.info(f"[MAJORITY VOTING] {fake_votes} FAKE vs {real_votes} REAL votes. Using weighted average.")
+        
+        if fake_votes > real_votes:
+            # FAKE wins - calculate weighted average of FAKE-voting models
+            fake_voting_results = [r for r in results if r.get('fakeScore', 0.5) > r.get('realScore', 0.5)]
+            fake_confidences = [r.get('confidence', 0.5) for r in fake_voting_results]
+            fake_fake_scores = [r.get('fakeScore', 0.5) for r in fake_voting_results]
+            
+            # Weighted average: higher confidence models contribute more
+            total_weight = sum(fake_confidences)
+            if total_weight > 0:
+                weighted_fake_score = sum(score * conf for score, conf in zip(fake_fake_scores, fake_confidences)) / total_weight
+            else:
+                weighted_fake_score = np.mean(fake_fake_scores)
+            
+            weighted_real_score = 1.0 - weighted_fake_score
+            
+            # Confidence = weighted average of winning models' scores
+            # This directly reflects the strength of the majority's predictions
+            # No artificial scaling needed - the weighted average already accounts for:
+            # - Individual model confidence (higher weight)
+            # - Natural variation in predictions
+            # - Consensus (only winning models contribute)
+            confidence = weighted_fake_score
+            
+            return 'FAKE', float(confidence), float(weighted_fake_score), float(weighted_real_score)
+        else:
+            # REAL wins - calculate weighted average of REAL-voting models
+            real_voting_results = [r for r in results if r.get('realScore', 0.5) > r.get('fakeScore', 0.5)]
+            real_confidences = [r.get('confidence', 0.5) for r in real_voting_results]
+            real_real_scores = [r.get('realScore', 0.5) for r in real_voting_results]
+            
+            # Weighted average: higher confidence models contribute more
+            total_weight = sum(real_confidences)
+            if total_weight > 0:
+                weighted_real_score = sum(score * conf for score, conf in zip(real_real_scores, real_confidences)) / total_weight
+            else:
+                weighted_real_score = np.mean(real_real_scores)
+            
+            weighted_fake_score = 1.0 - weighted_real_score
+            
+            # Confidence = weighted average of winning models' scores
+            # This directly reflects the strength of the majority's predictions
+            # No artificial scaling needed - the weighted average already accounts for:
+            # - Individual model confidence (higher weight)
+            # - Natural variation in predictions
+            # - Consensus (only winning models contribute)
+            confidence = weighted_real_score
+            
+            return 'REAL', float(confidence), float(weighted_fake_score), float(weighted_real_score)
+    
+    # CASE 2: Tied vote (4-4) - Use LR model as tiebreaker
+    logger.info(f"[TIE VOTE] {fake_votes} FAKE vs {real_votes} REAL votes. Using LR model as tiebreaker.")
+    
     voter = get_lr_voter()
     
     if not voter.is_trained:
         # Fallback to Bayesian inference if not trained
-        print("Warning: LR voter not trained. Using Bayesian inference as fallback.")
+        logger.warning("LR voter not trained. Using Bayesian inference as fallback.")
         
         # Bayesian inference: combine independent model predictions
         # Using log-sum-exp trick for numerical stability
@@ -519,15 +596,16 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
         )
         
         # Apply tiered calibration floor based on consensus strength
-        if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
+        # For 8 models: 8=100%, 7=87.5%, 6=75%, 5=62.5%, 4=50%
+        if consensus_ratio >= 0.875:  # Strong consensus (7-8 models agree)
             calibration = max(calibration, 0.70)  # High confidence floor
-        elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
+        elif consensus_ratio >= 0.75:  # Good consensus (6 models agree)
             calibration = max(calibration, 0.60)  # Good confidence floor
-        elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
+        elif consensus_ratio >= 0.625:  # Moderate majority (5 models agree)
             calibration = max(calibration, 0.55)  # Moderate confidence floor
-        elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
-            calibration = max(calibration, 0.55)  # Moderate confidence floor
-        # else: use natural calibration for very close votes
+        elif consensus_ratio >= 0.50:  # Weak majority (4 models agree - tie breaker)
+            calibration = max(calibration, 0.50)  # Neutral confidence floor
+        # else: no floor for very weak votes (3 or fewer models agree)
         
         # Apply calibration to base confidence
         if base_confidence > 0.5:
@@ -539,129 +617,16 @@ def apply_logistic_regression_voting(results: List[Dict]) -> Tuple[str, float, f
         
         return prediction, float(confidence), float(fake_prob), float(real_prob)
     
-    # Use trained LR model
+    # Use trained LR model for tiebreaker
     is_fake, confidence, details = voter.predict(results)
     fake_prob = details['fake_probability']
     real_prob = details['real_probability']
     
-    # Sanity check: if LR model contradicts average scores or voting consensus, use Bayesian instead
-    # This protects against poorly trained models
-    avg_fake = np.mean([r.get('fakeScore', 0.5) for r in results])
-    avg_real = np.mean([r.get('realScore', 0.5) for r in results])
-    
-    # Count actual votes
-    predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' for r in results]
-    fake_votes = predictions.count('FAKE')
-    real_votes = predictions.count('REAL')
-    
-    # If average scores disagree with LR prediction, fall back to Bayesian
-    avg_indicates_fake = avg_fake > avg_real
-    lr_predicts_fake = is_fake
-    
-    # Trigger Bayesian fallback if ANY of these conditions are met:
-    # 1. Average scores disagree with LR by more than 3% (lowered from 10%)
-    # 2. Strong voting consensus (5+ models) disagrees with LR prediction
-    # 3. Very high confidence fake predictions (3+ models with >90% fake) but LR says REAL
-    should_use_bayesian = False
-    
-    if avg_indicates_fake != lr_predicts_fake:
-        score_diff = abs(avg_fake - avg_real)
-        if score_diff > 0.03:  # Lowered from 0.10 to 0.03 (3%)
-            should_use_bayesian = True
-            lr_prediction_str = 'FAKE' if is_fake else 'REAL'
-            print(f"Warning: LR model prediction ({lr_prediction_str}) contradicts average scores (avg_fake={avg_fake:.3f}, avg_real={avg_real:.3f}, diff={score_diff:.3f}). Using Bayesian inference.")
-    
-    # Check voting consensus override
-    if not should_use_bayesian:
-        if fake_votes >= 5 and not lr_predicts_fake:
-            should_use_bayesian = True
-            print(f"Warning: LR model predicts REAL but {fake_votes}/8 models predict FAKE. Using Bayesian inference.")
-        elif real_votes >= 5 and lr_predicts_fake:
-            should_use_bayesian = True
-            print(f"Warning: LR model predicts FAKE but {real_votes}/8 models predict REAL. Using Bayesian inference.")
-    
-    # Check high-confidence predictions override
-    if not should_use_bayesian and not lr_predicts_fake:
-        high_conf_fake_count = sum(1 for r in results if r.get('fakeScore', 0) > 0.90)
-        if high_conf_fake_count >= 3:
-            should_use_bayesian = True
-            print(f"Warning: LR model predicts REAL but {high_conf_fake_count} models have >90% fake confidence. Using Bayesian inference.")
-    
-    if should_use_bayesian:
-            
-            # Use Bayesian inference instead
-            fake_scores = [r.get('fakeScore', 0.5) for r in results]
-            real_scores = [r.get('realScore', 0.5) for r in results]
-            
-            # Convert to log probabilities for numerical stability
-            log_fake_scores = [np.log(max(s, 1e-10)) for s in fake_scores]
-            log_real_scores = [np.log(max(s, 1e-10)) for s in real_scores]
-            
-            # Sum log probabilities (equivalent to multiplying probabilities)
-            sum_log_fake = np.sum(log_fake_scores)
-            sum_log_real = np.sum(log_real_scores)
-            
-            # Use log-sum-exp trick to compute normalized probabilities
-            max_log = max(sum_log_fake, sum_log_real)
-            
-            exp_fake = np.exp(sum_log_fake - max_log)
-            exp_real = np.exp(sum_log_real - max_log)
-            
-            # Normalize
-            total = exp_fake + exp_real
-            if total > 0:
-                fake_prob = exp_fake / total
-                real_prob = exp_real / total
-            else:
-                fake_prob = 0.5
-                real_prob = 0.5
-            
-            base_confidence = max(fake_prob, real_prob)
-            
-            # === APPLY CALIBRATION ===
-            predictions = ['FAKE' if r.get('fakeScore', 0.5) > r.get('realScore', 0.5) else 'REAL' 
-                           for r in results]
-            is_fake_pred = fake_prob > real_prob
-            majority_votes = predictions.count('FAKE' if is_fake_pred else 'REAL')
-            consensus_ratio = majority_votes / len(results) if len(results) > 0 else 0.5
-            
-            avg_fake_sc = np.mean(fake_scores) if len(fake_scores) > 0 else 0.5
-            avg_real_sc = np.mean(real_scores) if len(real_scores) > 0 else 0.5
-            score_diff_sc = abs(avg_fake_sc - avg_real_sc)
-            
-            score_variance_sc = np.std(fake_scores) if len(fake_scores) > 1 else 0.0
-            agreement_factor_sc = 1.0 - min(score_variance_sc, 0.3) / 0.3
-            
-            calibration_sc = (
-                0.40 * consensus_ratio +
-                0.40 * score_diff_sc +
-                0.20 * agreement_factor_sc
-            )
-            
-            # Apply tiered calibration floor based on consensus strength
-            if consensus_ratio >= 0.875:  # Strong consensus (8-9 models agree)
-                calibration_sc = max(calibration_sc, 0.70)  # High confidence floor
-            elif consensus_ratio >= 0.75:  # Good consensus (7 models agree)
-                calibration_sc = max(calibration_sc, 0.60)  # Good confidence floor
-            elif consensus_ratio >= 0.625:  # Moderate majority (6 models agree)
-                calibration_sc = max(calibration_sc, 0.55)  # Moderate confidence floor
-            elif consensus_ratio >= 0.45:  # Weak majority (5 models agree)
-                calibration_sc = max(calibration_sc, 0.55)  # Moderate confidence floor
-            # else: use natural calibration for very close votes
-            
-            # Apply calibration to base confidence
-            if base_confidence > 0.5:
-                confidence = 0.5 + (base_confidence - 0.5) * calibration_sc
-            else:
-                confidence = base_confidence
-            
-            prediction = 'FAKE' if fake_prob > real_prob else 'REAL'
-            
-            return prediction, float(confidence), float(fake_prob), float(real_prob)
-    
     prediction = 'FAKE' if is_fake else 'REAL'
+    logger.info(f"[LR TIEBREAKER] Prediction: {prediction}, Confidence: {confidence:.4f}, Fake prob: {fake_prob:.4f}, Real prob: {real_prob:.4f}")
     
-    return prediction, confidence, fake_prob, real_prob
+    # Return LR model result directly for tied votes
+    return prediction, float(confidence), float(fake_prob), float(real_prob)
 
 
 # Pre-training data (if available) - can be populated with validation results
