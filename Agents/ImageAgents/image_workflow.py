@@ -17,6 +17,7 @@ from Agents.ImageAgents.nonescape_agent import create_nonescape_agent
 # from Agents.ImageAgents.seresnet50_agent import create_seresnet50_agent  # COMMENTED OUT for LR training
 from Agents.ImageAgents.prithiv_v1_agent import create_prithiv_v1_agent
 from Agents.ImageAgents.dima_vit_agent import create_dima_vit_agent
+from Agents.ImageAgents.dimavit_v2_finetuned_agent import create_dimavit_v2_finetuned_agent
 from Agents.ImageAgents.organika_sdxl_agent import create_organika_sdxl_agent
 from Agents.ImageAgents.mobilenetv2_agent import create_mobilenetv2_agent
 from Agents.ImageAgents.mobilenetv2_cnn_agent import create_mobilenetv2_cnn_agent
@@ -48,7 +49,7 @@ def get_or_create_agents():
     Thread-safe initialization prevents duplicate loading.
     
     Returns:
-        Tuple of (nonescape_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent)
+        Tuple of (nonescape_agent, prithiv_v1_agent, dima_vit_agent, dimavit_v2_finetuned_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent)
         NOTE: seresnet50_agent COMMENTED OUT for LR training
     """
     global _cached_agents
@@ -72,6 +73,7 @@ def get_or_create_agents():
         # seresnet50_agent = create_seresnet50_agent()  # COMMENTED OUT for LR training
         prithiv_v1_agent = create_prithiv_v1_agent()
         dima_vit_agent = create_dima_vit_agent()
+        dimavit_v2_finetuned_agent = create_dimavit_v2_finetuned_agent()
         organika_sdxl_agent = create_organika_sdxl_agent()
         mobilenetv2_agent = create_mobilenetv2_agent()
         mobilenetv2_cnn_agent = create_mobilenetv2_cnn_agent()
@@ -84,6 +86,7 @@ def get_or_create_agents():
             # seresnet50_agent,  # COMMENTED OUT for LR training
             prithiv_v1_agent,
             dima_vit_agent,
+            dimavit_v2_finetuned_agent,
             organika_sdxl_agent,
             mobilenetv2_agent,
             mobilenetv2_cnn_agent,
@@ -130,7 +133,7 @@ async def run_image_detection_workflow(
     try:
         # Get or create detection agents (cached to avoid recreating on every request)
         logger.info("Getting detection agents...")
-        nonescape_agent, prithiv_v1_agent, dima_vit_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent = get_or_create_agents()
+        nonescape_agent, prithiv_v1_agent, dima_vit_agent, dimavit_v2_finetuned_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent = get_or_create_agents()
         # seresnet50_agent COMMENTED OUT for LR training
         
         # Validate image_path exists
@@ -160,6 +163,7 @@ async def run_image_detection_workflow(
             # seresnet50_agent,  # COMMENTED OUT for LR training
             prithiv_v1_agent,
             dima_vit_agent,
+            dimavit_v2_finetuned_agent,
             organika_sdxl_agent,
             mobilenetv2_agent,
             mobilenetv2_cnn_agent,

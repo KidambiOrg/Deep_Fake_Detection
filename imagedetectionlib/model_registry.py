@@ -36,6 +36,20 @@ MODEL_REGISTRY = {
             'path': 'huggingface/dima806/deepfake_vs_real_image_detection'
         }
     },
+    'dimavit-v2-finetuned': {
+        'name': 'DimaVit V2 Fine-tuned',
+        'display_name': 'DimaVit V2 Fine-tuned Detector',
+        'description': 'Vision Transformer fine-tuned on deepfake dataset for enhanced detection',
+        'architecture': 'ViT',
+        'source': 'dimavit_v2',
+        'labels': {0: 'Real', 1: 'Deepfake'},
+        'recommended_threshold': 0.5,
+        'local_path': 'Models/dimavit_v2_FineTuned',
+        'blob_storage': {
+            'container': 'models',
+            'path': 'dimavit_v2_FineTuned'
+        }
+    },
     'organika-sdxl': {
         'name': 'Organika/sdxl-detector',
         'display_name': 'Organika SDXL Detector',

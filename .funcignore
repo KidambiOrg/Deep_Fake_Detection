@@ -27,6 +27,7 @@ TextModels/
 Data/
 Tests/
 Scripts/
+DebugScripts/
 examples/
 UI/
 outputModel/
