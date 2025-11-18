@@ -177,11 +177,11 @@ def process_single_face(face_data: tuple, faces_folder: str, min_confidence: flo
     gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
     blur_score = cv2.Laplacian(face_img, cv2.CV_64F).var()
     
-    if blur_score < min_blur_threshold:
-        with stats_lock:
-            stats['faces_rejected_blurry'] += 1
-        print(f"  [Frame {frame_number}] Skipped face {face_idx + 1}: Too blurry (score: {blur_score:.2f} < {min_blur_threshold})")
-        return
+    # if blur_score < min_blur_threshold:
+    #     with stats_lock:
+    #         stats['faces_rejected_blurry'] += 1
+    #     print(f"  [Frame {frame_number}] Skipped face {face_idx + 1}: Too blurry (score: {blur_score:.2f} < {min_blur_threshold})")
+    #     return
     
     # Generate filename
     filename = f"face_frame{frame_number:06d}_face{face_idx:02d}_conf{confidence:.2f}.jpg"
