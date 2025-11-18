@@ -92,34 +92,73 @@ async def summarize_results(
             # Get messages from agent_run_response
             messages = getattr(result.agent_run_response, "messages", [])
             
-            if messages:
-                # Extract the final assistant message
-                final_msg = messages[-1]
+            if not messages:
+                logger.warning(f"  No messages in result {idx}")
+                continue
                 
-                if hasattr(final_msg, 'text'):
-                    msg_text = final_msg.text
+            # Extract the final assistant message
+            final_msg = messages[-1]
+            
+            if not hasattr(final_msg, 'text'):
+                logger.warning(f"  Final message has no 'text' attribute in result {idx}")
+                continue
+                
+            msg_text = final_msg.text
+            
+            # Check if text is None or empty
+            if msg_text is None:
+                logger.warning(f"  Message text is None in result {idx}")
+                continue
+            
+            # Check if it's already an IndividualModelResult object
+            if isinstance(msg_text, IndividualModelResult):
+                logger.info(f"  Found IndividualModelResult object")
+                individual_results.append(msg_text)
+            # Parse from dictionary
+            elif isinstance(msg_text, dict):
+                logger.info(f"  Parsing as dict: {msg_text}")
+                individual_results.append(IndividualModelResult(**msg_text))
+            # Parse from JSON string
+            elif isinstance(msg_text, str):
+                import json
+                import re
+                stripped_text = msg_text.strip()
+                
+                if not stripped_text:
+                    logger.warning(f"  Empty message text received in result {idx}")
+                    continue
                     
-                    # Check if it's already an IndividualModelResult object
-                    if isinstance(msg_text, IndividualModelResult):
-                        logger.info(f"  Found IndividualModelResult object")
-                        individual_results.append(msg_text)
-                    # Parse from dictionary
-                    elif isinstance(msg_text, dict):
-                        logger.info(f"  Parsing as dict")
-                        individual_results.append(IndividualModelResult(**msg_text))
-                    # Parse from JSON string
-                    elif isinstance(msg_text, str):
-                        import json
-                        stripped_text = msg_text.strip()
-                        if stripped_text.startswith('{') or stripped_text.startswith('['):
-                            logger.info(f"  Parsing as JSON string")
-                            result_data = json.loads(stripped_text)
+                if stripped_text.startswith('{') or stripped_text.startswith('['):
+                    logger.info(f"  Parsing as JSON string: {stripped_text[:100]}...")
+                    try:
+                        result_data = json.loads(stripped_text)
+                        individual_results.append(IndividualModelResult(**result_data))
+                    except json.JSONDecodeError as json_err:
+                        logger.error(f"  JSON decode error in result {idx}: {json_err}")
+                        logger.error(f"  Problematic text: {stripped_text[:500]}")
+                        continue
+                else:
+                    # Try to extract JSON from mixed text (in case agent added commentary)
+                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', stripped_text)
+                    if json_match:
+                        logger.info(f"  Attempting to extract JSON from mixed text")
+                        try:
+                            result_data = json.loads(json_match.group())
                             individual_results.append(IndividualModelResult(**result_data))
-                        else:
-                            logger.info(f"  Skipping non-JSON text: {msg_text[:200]}")
+                            logger.info(f"  Successfully extracted JSON from mixed text")
+                        except json.JSONDecodeError:
+                            logger.warning(f"  Failed to parse extracted JSON in result {idx}")
+                            logger.info(f"  Skipping text: {msg_text[:200]}")
+                    else:
+                        logger.info(f"  Skipping non-JSON text in result {idx}: {msg_text[:200]}")
+            else:
+                logger.warning(f"  Unexpected message type in result {idx}: {type(msg_text)}")
+                
         except Exception as e:
             executor_id = getattr(result, 'executor_id', 'unknown')
             logger.warning(f"Failed to parse result from {executor_id}: {e}")
+            import traceback
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
     
     if not individual_results:
         raise RuntimeError("No detection results returned from any model")
