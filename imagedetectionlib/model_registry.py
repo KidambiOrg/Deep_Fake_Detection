@@ -16,11 +16,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
         'recommended_threshold': 0.5,
-        'local_path': 'Models/huggingface/prithivMLMods/deepfake-detector-model-v1',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'huggingface/prithivMLMods/deepfake-detector-model-v1'
-        }
+        'local_path': 'Models/huggingface/prithivMLMods/deepfake-detector-model-v1'
     },
     'dima-vit': {
         'name': 'dima806/deepfake_vs_real_image_detection',
@@ -30,11 +26,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
-        'local_path': 'Models/dimavit',  # Local pre-downloaded weights
-        'blob_storage': {
-            'container': 'models',
-            'path': 'huggingface/dima806/deepfake_vs_real_image_detection'
-        }
+        'local_path': 'Models/dimavit'  # Local pre-downloaded weights
     },
     'dimavit-v2-finetuned': {
         'name': 'DimaVit V2 Fine-tuned',
@@ -44,11 +36,7 @@ MODEL_REGISTRY = {
         'source': 'dimavit_v2',
         'labels': {0: 'Real', 1: 'Deepfake'},
         'recommended_threshold': 0.5,
-        'local_path': 'Models/dimavit_v2_FineTuned',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'dimavit_v2_FineTuned'
-        }
+        'local_path': 'Models/dimavit_v2_FineTuned'
     },
     'organika-sdxl': {
         'name': 'Organika/sdxl-detector',
@@ -58,11 +46,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': None,
         'recommended_threshold': 0.5,
-        'local_path': 'Models/huggingface/Organika/sdxl-detector',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'huggingface/Organika/sdxl-detector'
-        }
+        'local_path': 'Models/huggingface/Organika/sdxl-detector'
     },
     'prithiv-open-deep-fake': {
         'name': 'prithivMLmods/open-deepfake-detection',
@@ -72,11 +56,7 @@ MODEL_REGISTRY = {
         'source': 'huggingface',
         'labels': {0: 'Fake', 1: 'Real'},
         'recommended_threshold': 0.5,
-        'local_path': 'Models/huggingface/prithiv_open_deep_fake',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'huggingface/prithiv_open_deep_fake'
-        }
+        'local_path': 'Models/huggingface/prithiv_open_deep_fake'
     },
     
     # Nonescape Models   
@@ -88,11 +68,7 @@ MODEL_REGISTRY = {
         'source': 'nonescape',
         'model_path': 'Models/nonescape-v0.safetensors',
         'use_mini': False,
-        'recommended_threshold': 0.5,
-        'blob_storage': {
-            'container': 'models',
-            'blob': 'nonescape/nonescape-v0.safetensors'
-        }
+        'recommended_threshold': 0.5
     },
     
     
@@ -123,11 +99,7 @@ MODEL_REGISTRY = {
         'model_type': 'finetuned',
         'model_path': 'Models/MobileNetV2_FineTuned/mobilenetv2_deepfake_model.keras',
         'recommended_threshold': 0.5,
-        'local_path': 'Models/MobileNetV2_FineTuned',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'MobileNetV2_FineTuned'
-        }
+        'local_path': 'Models/MobileNetV2_FineTuned'
     },
     
     'mobilenetv2_cnn': {
@@ -141,11 +113,7 @@ MODEL_REGISTRY = {
         'recommended_threshold': 0.5,
         'output_format': 'single_sigmoid',
         'label_convention': '1.0=FAKE, 0.0=REAL',
-        'local_path': 'Models/MobileNETV2_CNN_FineTuned',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'MobileNETV2_CNN_FineTuned'
-        }
+        'local_path': 'Models/MobileNETV2_CNN_FineTuned'
     },
     
     'cnn_v3_finetuned': {
@@ -159,11 +127,7 @@ MODEL_REGISTRY = {
         'recommended_threshold': 0.5,
         'output_format': 'single_sigmoid',
         'label_convention': '>0.5=REAL, <=0.5=FAKE',
-        'local_path': 'Models/CNN_V3_FineTuned',
-        'blob_storage': {
-            'container': 'models',
-            'path': 'CNN_V3_FineTuned'
-        }
+        'local_path': 'Models/CNN_V3_FineTuned'
     },
     
   

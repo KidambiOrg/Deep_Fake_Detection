@@ -80,61 +80,9 @@ class NonescapeClassifier(nn.Module):
 _nonescape_model = None
 _device = None
 
-def get_cached_model_path(model_key: str, blob_config: dict) -> str:
-    """
-    Get cached model path or download from blob storage.
-    Priority: Cache → Blob download to cache
-    
-    Note: blob_storage_helper now handles cache checking internally,
-    so we just delegate to it directly (no double checking).
-    
-    Args:
-        model_key: Model key identifier
-        blob_config: Blob storage configuration from MODEL_REGISTRY
-        
-    Returns:
-        Local file path to model in cache
-    """
-    # Check for single file blob
-    if 'blob' in blob_config:
-        try:
-            from utils.blob_storage_helper import get_blob_loader
-            blob_loader = get_blob_loader()
-            
-            if blob_loader and blob_loader.blob_service_client:
-                # download_model now checks cache first internally
-                downloaded_path = blob_loader.download_model(
-                    container_name=blob_config['container'],
-                    blob_name=blob_config['blob']
-                )
-                
-                if downloaded_path:
-                    return downloaded_path
-                else:
-                    logger.warning(f"Failed to get {model_key} from cache or blob storage")
-            else:
-                logger.warning("Blob storage not configured")
-                
-        except Exception as e:
-            logger.error(f"Error getting {model_key}: {e}")
-        
-        # If failed, return expected cache path (will fail gracefully in caller)
-        cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-        blob_path = f"{blob_config['container']}/{blob_config['blob']}"
-        path_hash = hashlib.md5(blob_path.encode()).hexdigest()
-        filename = Path(blob_config['blob']).name
-        cache_path = cache_dir / f"{path_hash}_{filename}"
-        logger.error(f"Failed to get model {model_key} - returning fallback path")
-        return str(cache_path)
-    
-    # No blob config provided
-    logger.error(f"No blob configuration provided for {model_key}")
-    return ""
-
 def load_nonescape_model():
     """
-    Load NoEscape model from cache or blob storage.
-    Follows caching pattern from app_detect_image.py
+    Load NoEscape model from local Models folder.
     """
     global _nonescape_model, _device
     
@@ -144,28 +92,30 @@ def load_nonescape_model():
     _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = NonescapeClassifier()
     
-    # Get model path with caching logic
-    blob_config = {
-        'container': 'models',
-        'blob': 'nonescape/nonescape-v0.safetensors'
-    }
-    model_path = get_cached_model_path('nonescape-full', blob_config)
+    # Load from local Models folder only
+    script_dir = Path(__file__).parent.parent.parent.parent
+    model_path = script_dir / "Models" / "nonescape-v0.safetensors"
+    
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"NoEscape model not found at: {model_path}\n"
+            f"Please ensure the model file exists in Models/ folder.\n"
+            f"Expected file: nonescape-v0.safetensors"
+        )
+    
+    model_path = str(model_path)
     
     # Load model weights
-    if os.path.exists(model_path):
-        try:
-            state_dict = load_file(model_path)
-            logger.info(f"Loading NoEscape Full model from: {model_path}")
-            logger.info(f"State dict has {len(state_dict)} keys, first 5: {list(state_dict.keys())[:5]}")
-            
-            model.load_state_dict(state_dict)
-            logger.info("Successfully loaded NoEscape Full model weights")
-        except Exception as e:
-            logger.error(f"Failed to load model weights: {e}")
-            logger.warning("Continuing with randomly initialized weights")
-    else:
-        logger.warning(f"Model file not found: {model_path}")
-        logger.warning("Using randomly initialized weights")
+    try:
+        state_dict = load_file(model_path)
+        logger.info(f"Loading NoEscape model from: {model_path}")
+        logger.info(f"State dict has {len(state_dict)} keys, first 5: {list(state_dict.keys())[:5]}")
+        
+        model.load_state_dict(state_dict)
+        logger.info("Successfully loaded NoEscape model weights")
+    except Exception as e:
+        logger.error(f"Failed to load model weights: {e}")
+        raise
     
     model = model.to(_device)
     model.eval()
@@ -224,6 +174,9 @@ def detect_with_nonescape_tool(image_path: str) -> dict:
     start_time = time.time()
     
     try:
+        # BUG FIX: Azure Agent Framework sometimes duplicates the path on retries
+        from utils.path_fix_helper import fix_duplicated_path
+        image_path = fix_duplicated_path(image_path)
         logger.info("Loading NoEscape model...")
         # Load model (uses cache if available)
         model, device = load_nonescape_model()

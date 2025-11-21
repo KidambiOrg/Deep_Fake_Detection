@@ -16,18 +16,10 @@ TEXT_MODEL_REGISTRY = {
         'source': 'trained',
         'model_files': {
             'model': {
-                'filename': 'charcnn_model.h5',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'charcnn/charcnn_model.h5'
-                }
+                'filename': 'charcnn_model.h5'
             },
             'tokenizer': {
-                'filename': 'charcnn_tokenizer.pkl',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'charcnn/charcnn_tokenizer.pkl'
-                }
+                'filename': 'charcnn_tokenizer.pkl'
             }
         },
         'local_path': 'textmodels',
@@ -43,11 +35,7 @@ TEXT_MODEL_REGISTRY = {
         'source': 'trained',
         'model_files': {
             'classifier': {
-                'filename': 'bert_ml_classifier.pkl',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'bert_ml/bert_ml_classifier.pkl'
-                }
+                'filename': 'bert_ml_classifier.pkl'
             }
         },
         'local_path': 'textmodels',
@@ -63,11 +51,7 @@ TEXT_MODEL_REGISTRY = {
         'source': 'trained',
         'model_files': {
             'classifier': {
-                'filename': 'distilbert_ml_classifier.pkl',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'distilbert_ml/distilbert_ml_classifier.pkl'
-                }
+                'filename': 'distilbert_ml_classifier.pkl'
             }
         },
         'local_path': 'textmodels',
@@ -83,18 +67,10 @@ TEXT_MODEL_REGISTRY = {
         'source': 'trained',
         'model_files': {
             'classifier': {
-                'filename': 'bow_ml_classifier.pkl',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'bow_ml/bow_ml_classifier.pkl'
-                }
+                'filename': 'bow_ml_classifier.pkl'
             },
             'vectorizer': {
-                'filename': 'bow_ml_vectorizer.pkl',
-                'blob_storage': {
-                    'container': 'textmodels',
-                    'blob': 'bow_ml/bow_ml_vectorizer.pkl'
-                }
+                'filename': 'bow_ml_vectorizer.pkl'
             }
         },
         'local_path': 'textmodels',

@@ -22,61 +22,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 _cnn_v3_model = None
 _model_lock = threading.Lock()
 
-def get_cached_model_path(model_key: str, blob_config: dict) -> str:
-    """
-    Get cached model path or download from blob storage.
-    Priority: Cache → Blob download to cache
-    
-    Args:
-        model_key: Model key identifier
-        blob_config: Blob storage configuration from MODEL_REGISTRY
-        
-    Returns:
-        Local file path to model in cache
-    """
-    # Check for path in blob config
-    if 'path' in blob_config:
-        try:
-            from utils.blob_storage_helper import get_blob_loader
-            blob_loader = get_blob_loader()
-            
-            if blob_loader and blob_loader.blob_service_client:
-                # Try .keras format (primary)
-                filename = 'cnn_v3_finetuned_DenseNet_model.keras'
-                blob_path = f"{blob_config['path']}/{filename}"
-                
-                downloaded_path = blob_loader.download_model(
-                    container_name=blob_config['container'],
-                    blob_name=blob_path
-                )
-                
-                if downloaded_path:
-                    logger.info(f"Downloaded {filename} from blob storage")
-                    return downloaded_path
-                
-                logger.warning(f"Failed to download {model_key} from blob storage")
-            else:
-                logger.warning("Blob storage not configured")
-                
-        except Exception as e:
-            logger.error(f"Error getting {model_key}: {e}")
-        
-        # If failed, return expected cache path (will fail gracefully in caller)
-        cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-        blob_path = f"{blob_config['container']}/{blob_config['path']}/cnn_v3_finetuned_DenseNet_model.keras"
-        path_hash = hashlib.md5(blob_path.encode()).hexdigest()
-        cache_path = cache_dir / f"{path_hash}_cnn_v3_finetuned_DenseNet_model.keras"
-        logger.error(f"Failed to get model {model_key} - returning fallback path")
-        return str(cache_path)
-    
-    # No blob config provided
-    logger.error(f"No blob configuration provided for {model_key}")
-    return ""
-
 def load_cnn_v3_model():
     """
-    Load CNN V3 DenseNet model (thread-safe).
-    Tries multiple locations (local, cache, blob).
+    Load CNN V3 DenseNet model from local Models folder (thread-safe).
     """
     global _cnn_v3_model
     
@@ -87,34 +35,18 @@ def load_cnn_v3_model():
         try:
             logger.info("Loading CNN V3 FineTuned model...")
             
-            # Try local paths first
-            script_dir = Path(__file__).parent.parent.parent
-            local_paths = [
-                script_dir / "Models" / "CNN_V3_FineTuned" / "cnn_v3_finetuned_DenseNet_model.keras",
-            ]
+            # Load from local Models folder only - go up 4 levels from tools/ to project root
+            script_dir = Path(__file__).parent.parent.parent.parent
+            model_path = script_dir / "Models" / "CNN_V3_FineTuned" / "cnn_v3_finetuned_DenseNet_model.keras"
             
-            model_path = None
-            for path in local_paths:
-                if path.exists():
-                    model_path = str(path)
-                    logger.info(f"Found local model at: {model_path}")
-                    break
-            
-            # If not found locally, try blob storage
-            if model_path is None:
-                logger.info("Model not found locally, trying blob storage...")
-                blob_config = {
-                    'container': 'models',
-                    'path': 'CNN_V3_FineTuned'
-                }
-                model_path = get_cached_model_path('cnn_v3_finetuned', blob_config)
-            
-            if not os.path.exists(model_path):
+            if not model_path.exists():
                 raise FileNotFoundError(
                     f"CNN V3 FineTuned model not found at: {model_path}\n"
                     f"Please ensure the model file exists in Models/CNN_V3_FineTuned/ folder.\n"
                     f"Expected file: cnn_v3_finetuned_DenseNet_model.keras"
                 )
+            
+            model_path = str(model_path)
             
             logger.info(f"Loading model from: {model_path}")
             
@@ -175,6 +107,10 @@ def detect_with_cnn_v3_tool(image_path: str) -> dict:
     start_time = time.time()
     
     try:
+        # BUG FIX: Azure Agent Framework sometimes duplicates the path on retries
+        from utils.path_fix_helper import fix_duplicated_path
+        image_path = fix_duplicated_path(image_path)
+        
         logger.info("Loading CNN V3 DenseNet model...")
         # Load model (uses cache if available, thread-safe)
         model = load_cnn_v3_model()

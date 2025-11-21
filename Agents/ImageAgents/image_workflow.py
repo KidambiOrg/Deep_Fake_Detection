@@ -32,6 +32,13 @@ import json
 import threading
 from typing import List, Optional
 from dotenv import load_dotenv
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception,
+    before_sleep_log
+)
 
 # Load environment variables
 load_dotenv()
@@ -97,6 +104,18 @@ def get_or_create_agents():
         logger.info("All detection agents created and cached successfully")
         return _cached_agents
 
+
+def is_timeout_error(exception):
+    """Check if exception is a timeout/connection error that should trigger retry."""
+    error_str = str(exception)
+    return (
+        'TransferEncodingError' in error_str or
+        'ConnectionResetError' in error_str or
+        'Incomplete download' in error_str or
+        'Response payload is not completed' in error_str
+    )
+
+
 async def run_image_detection_workflow(
     image_path: str,
     threshold: float = 0.20,
@@ -104,6 +123,8 @@ async def run_image_detection_workflow(
 ) -> ImageDetectionResult:
     """
     Run concurrent image detection workflow using Agent Framework.
+    
+    CODE VERSION: v2024-11-20-non-streaming-with-retry
     
     Implements ensemble voting methods from detect_deepfake_image.py:
     - majority: Simple majority vote
@@ -131,6 +152,7 @@ async def run_image_detection_workflow(
         ImageDetectionResult with ensemble predictions and markdown report
     """
     try:
+        logger.info("=== IMAGE WORKFLOW v2024-11-20-non-streaming-with-retry ===")
         # Get or create detection agents (cached to avoid recreating on every request)
         logger.info("Getting detection agents...")
         nonescape_agent, prithiv_v1_agent, dima_vit_agent, dimavit_v2_finetuned_agent, organika_sdxl_agent, mobilenetv2_agent, mobilenetv2_cnn_agent, cnn_v3_agent, prithiv_open_deep_fake_agent = get_or_create_agents()
@@ -159,16 +181,15 @@ async def run_image_detection_workflow(
         # Build concurrent workflow using ConcurrentBuilder
         logger.info("Building concurrent workflow...")
         workflow = ConcurrentBuilder().participants([
-            nonescape_agent,
-            # seresnet50_agent,  # COMMENTED OUT for LR training
+            nonescape_agent,            
             prithiv_v1_agent,
             dima_vit_agent,
             dimavit_v2_finetuned_agent,
             organika_sdxl_agent,
-            mobilenetv2_agent,
-            mobilenetv2_cnn_agent,
-            cnn_v3_agent,
-            prithiv_open_deep_fake_agent
+             mobilenetv2_agent,
+             mobilenetv2_cnn_agent,
+             cnn_v3_agent,
+             prithiv_open_deep_fake_agent
         ]).with_aggregator(custom_aggregator).build()
         
         logger.info("Running concurrent detection workflow...")
@@ -179,19 +200,30 @@ async def run_image_detection_workflow(
         # TODO: Explore passing base64-encoded images or using Agent Framework's file handling
         workflow_input = image_path
         
-        completion: WorkflowOutputEvent | None = None
-        async for event in workflow.run_stream(workflow_input):
-            if isinstance(event, WorkflowOutputEvent):
-                completion = event
+        # Define retry decorator with exponential backoff using tenacity
+        # Retries on timeout errors with exponential backoff: 2s, 4s, 8s
+        @retry(
+            retry=retry_if_exception(is_timeout_error),
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=2, min=2, max=10),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+            reraise=True
+        )
+        async def run_workflow_with_retry():
+            logger.info("Running workflow...")
+            events = await workflow.run(workflow_input)
+            
+            # Extract the final output from events
+            outputs = events.get_outputs()
+            if outputs and len(outputs) > 0:
+                result = outputs[0]
+                logger.info("Workflow completed successfully")
+                return result
+            else:
+                raise RuntimeError("Workflow did not produce any output")
         
-        if completion and completion.data:
-            result = completion.data
-        else:
-            # Return error result if no completion or data
-            raise RuntimeError("Workflow did not produce any output")
-
-        # Ensure result is always an ImageDetectionResult        
-
+        # Execute workflow with automatic retry
+        result = await run_workflow_with_retry()
         return result
         
     except Exception as e:

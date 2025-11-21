@@ -19,76 +19,9 @@ _dimavit_v2_model = None
 _dimavit_v2_processor = None
 _device = None
 
-def get_cached_model_directory(model_key: str, blob_config: dict, required_files: Optional[list] = None) -> str:
-    """
-    Get cached model directory or download from blob storage.
-    Priority: Cache (validated) → Blob download to cache
-    
-    Args:
-        model_key: Model key identifier
-        blob_config: Blob storage configuration with blob_prefix
-        required_files: List of required files to validate cache (e.g., ['config.json', 'preprocessor_config.json'])
-        
-    Returns:
-        Local directory path to model in cache
-    """
-    # Check for directory blob
-    if 'blob_prefix' in blob_config:
-        try:
-            from utils.blob_storage_helper import get_blob_loader
-            blob_loader = get_blob_loader()
-            
-            if blob_loader and blob_loader.blob_service_client:
-                # First check if cache exists and is valid
-                cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-                blob_prefix_normalized = blob_config['blob_prefix'].replace('/', os.sep)
-                local_dir = cache_dir / blob_config['container'] / blob_prefix_normalized
-                
-                # Validate cache - check if all required files exist
-                force_download = False
-                if local_dir.exists() and required_files:
-                    missing_files = [f for f in required_files if not (local_dir / f).exists()]
-                    if missing_files:
-                        logger.warning(f"Cache incomplete for {model_key}, missing: {missing_files}. Re-downloading...")
-                        force_download = True
-                
-                # Download with validation (force if cache is incomplete)
-                downloaded_path = blob_loader.download_directory(
-                    container_name=blob_config['container'],
-                    blob_prefix=blob_config['blob_prefix'],
-                    force_download=force_download
-                )
-                
-                if downloaded_path:
-                    # Final validation after download
-                    if required_files:
-                        missing_files = [f for f in required_files if not (Path(downloaded_path) / f).exists()]
-                        if missing_files:
-                            logger.error(f"Downloaded model still missing files: {missing_files}")
-                            return ""
-                    return str(downloaded_path)
-                else:
-                    logger.warning(f"Failed to get {model_key} from cache or blob storage")
-            else:
-                logger.warning("Blob storage not configured")
-                
-        except Exception as e:
-            logger.error(f"Error getting {model_key}: {e}")
-        
-        # If failed, return expected cache path (will fail gracefully in caller)
-        cache_dir = Path(tempfile.gettempdir()) / "deepfake_models_cache"
-        cache_path = cache_dir / blob_config['container'] / blob_config['blob_prefix']
-        logger.error(f"Failed to get model {model_key} - returning fallback path")
-        return str(cache_path)
-    
-    # No blob config provided
-    logger.error(f"No blob configuration provided for {model_key}")
-    return ""
-
 def load_dimavit_v2_model():
     """
-    Load DimaVit V2 Fine-tuned model from cache or blob storage.
-    Follows caching pattern from app_detect_image.py
+    Load DimaVit V2 Fine-tuned model from local Models folder.
     """
     global _dimavit_v2_model, _dimavit_v2_processor, _device
     
@@ -97,19 +30,22 @@ def load_dimavit_v2_model():
     
     _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Get model directory with caching logic
-    blob_config = {
-        'container': 'models',
-        'blob_prefix': 'dimavit_v2_FineTuned'
-    }
+    # Load from local Models folder only
+    script_dir = Path(__file__).parent.parent.parent.parent
+    model_path = script_dir / "Models" / "dimavit_v2_FineTuned"
     
-    # Required files for HuggingFace model to load properly
-    required_files = ['config.json', 'preprocessor_config.json', 'model.safetensors']
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"DimaVit V2 Fine-tuned model not found at: {model_path}\n"
+            f"Please ensure the model directory exists in Models/dimavit_v2_FineTuned folder.\n"
+            f"Expected files: config.json, preprocessor_config.json, model.safetensors"
+        )
     
-    model_path = get_cached_model_directory('dimavit-v2-finetuned', blob_config, required_files)
+    model_path = str(model_path)
     
     # Load model and processor
     try:
+        logger.info(f"Loading DimaVit V2 Fine-tuned model from: {model_path}")
         processor = ViTImageProcessor.from_pretrained(model_path)
         
         # Load model with standard float32 precision
@@ -179,6 +115,10 @@ def detect_with_dimavit_v2_finetuned_tool(image_path: str) -> dict:
     start_time = time.time()
     
     try:
+        # BUG FIX: Azure Agent Framework sometimes duplicates the path on retries
+        from utils.path_fix_helper import fix_duplicated_path
+        image_path = fix_duplicated_path(image_path)
+        
         # Load model (uses cache if available)
         model, processor, device = load_dimavit_v2_model()
         

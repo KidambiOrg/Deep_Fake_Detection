@@ -91,22 +91,112 @@ def health_check_text(req: func.HttpRequest) -> func.HttpResponse:
  
 @app.route(route="preloadImageModels", methods=["GET"])
 async def preload_image_models(req: func.HttpRequest) -> func.HttpResponse:
-    """Preload image detection models from blob storage to cache"""
-    logging.info('Preload endpoint for image models called - downloading from blob storage.')
+    """Preload image detection models from local Models folder to memory"""
+    logging.info('Preload endpoint for image models called - loading from Models folder.')
     
     try:
-        from Agents.ImageAgents.predownload_from_blob_agent import run_preload_image_models
+        from Agents.ImageAgents.image_workflow import get_or_create_agents
         
-        # Run the preload workflow
-        result = await run_preload_image_models()
+        # Create agents - this will cache them and trigger model loading
+        logging.info("Initializing agents and loading models...")
+        agents = get_or_create_agents()
         
-        # Determine HTTP status based on result
-        if result['status'] == 'success':
+        # Force model loading by calling each tool's load function
+        from Agents.ImageAgents.tools import nonescape_detect_tool
+        from Agents.ImageAgents.tools import prithiv_v1_detect_tool
+        from Agents.ImageAgents.tools import dima_vit_detect_tool
+        from Agents.ImageAgents.tools import dimavit_v2_finetuned_detect_tool
+        from Agents.ImageAgents.tools import organika_sdxl_detect_tool
+        from Agents.ImageAgents.tools import mobilenetv2_detect_tool
+        from Agents.ImageAgents.tools import mobilenetv2_cnn_detect_tool
+        from Agents.ImageAgents.tools import cnn_v3_detect_tool
+        from Agents.ImageAgents.tools import prithiv_open_deep_fake_detect_tool
+        
+        models_loaded = []
+        models_failed = []
+        
+        # Preload each model
+        try:
+            nonescape_detect_tool.load_nonescape_model()
+            models_loaded.append("nonescape")
+        except Exception as e:
+            models_failed.append(f"nonescape: {str(e)}")
+        
+        try:
+            prithiv_v1_detect_tool.load_prithiv_model()
+            models_loaded.append("prithiv_v1")
+        except Exception as e:
+            models_failed.append(f"prithiv_v1: {str(e)}")
+        
+        try:
+            dima_vit_detect_tool.load_dima_model()
+            models_loaded.append("dima_vit")
+        except Exception as e:
+            models_failed.append(f"dima_vit: {str(e)}")
+        
+        try:
+            dimavit_v2_finetuned_detect_tool.load_dimavit_v2_model()
+            models_loaded.append("dimavit_v2_finetuned")
+        except Exception as e:
+            models_failed.append(f"dimavit_v2_finetuned: {str(e)}")
+        
+        try:
+            organika_sdxl_detect_tool.load_organika_model()
+            models_loaded.append("organika_sdxl")
+        except Exception as e:
+            models_failed.append(f"organika_sdxl: {str(e)}")
+        
+        try:
+            mobilenetv2_detect_tool.load_mobilenetv2_model()
+            models_loaded.append("mobilenetv2")
+        except Exception as e:
+            models_failed.append(f"mobilenetv2: {str(e)}")
+        
+        try:
+            mobilenetv2_cnn_detect_tool.load_mobilenetv2_cnn_model()
+            models_loaded.append("mobilenetv2_cnn")
+        except Exception as e:
+            models_failed.append(f"mobilenetv2_cnn: {str(e)}")
+        
+        try:
+            cnn_v3_detect_tool.load_cnn_v3_model()
+            models_loaded.append("cnn_v3")
+        except Exception as e:
+            models_failed.append(f"cnn_v3: {str(e)}")
+        
+        try:
+            prithiv_open_deep_fake_detect_tool.load_prithiv_open_model()
+            models_loaded.append("prithiv_open_deep_fake")
+        except Exception as e:
+            models_failed.append(f"prithiv_open_deep_fake: {str(e)}")
+        
+        # Determine status
+        total = len(models_loaded) + len(models_failed)
+        successful = len(models_loaded)
+        failed = len(models_failed)
+        
+        if failed == 0:
+            status = "success"
             status_code = 200
-        elif result['status'] == 'partial':
-            status_code = 207  # Multi-Status
+        elif successful > 0:
+            status = "partial"
+            status_code = 207
         else:
+            status = "error"
             status_code = 500
+        
+        result = {
+            "status": status,
+            "service": "image_detection",
+            "message": f"Loaded {successful}/{total} models from local Models folder",
+            "total_models": total,
+            "successful": successful,
+            "failed": failed,
+            "models_loaded": models_loaded,
+            "models_failed": models_failed
+        }
+        
+        logging.info(f"Model preload complete: {successful}/{total} models loaded")
         
         return func.HttpResponse(
             json.dumps(result),

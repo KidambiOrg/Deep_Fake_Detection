@@ -33,6 +33,7 @@ python-dotenv
 deepface
 streamlit
 plotly
+tenacity
 
 # Azure AI Foundry
 azure-ai-projects
