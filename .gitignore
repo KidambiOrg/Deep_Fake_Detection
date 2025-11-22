@@ -11,6 +11,7 @@ Models/
 TextModels/
 VideoModels/
 Video_Models/RetinaFace/.deepface/weights/retinaface.h5
+Video_Models/RetinaFace/.deepface/weights/yolov11n-face.pt
 Video_Models/VGG/.deepface/weights/vgg_face_weights.h5
 Video_Models/Mediapipe/blaze_face_short_range.tflite
 Video_Models/OpenCV_DNN/deploy.prototxt

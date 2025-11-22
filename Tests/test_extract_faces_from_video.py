@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 import urllib.request
 import time
 
+from deduplicate_faces import deduplicate_faces
+
 # Load environment variables from .env file
 SCRIPT_DIR = Path(__file__).parent.parent
 ENV_FILE = SCRIPT_DIR / ".env"
@@ -497,13 +499,12 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
         step3_start = time.time()
         
         try:
-            # Import from the same directory
-            from deduplicate_faces import deduplicate_faces
-            
             dedup_results = deduplicate_faces(
                 faces_folder=faces_folder,
                 model_name="Facenet",
-                distance_metric="cosine"
+                distance_metric="cosine",
+                detector_backend="yolov11n",
+                fallback_detector="retinaface"
             )
             
             step3_elapsed = time.time() - step3_start
@@ -572,7 +573,7 @@ def main():
     min_confidence = 0.5  # OpenCV DNN default confidence threshold
     face_expansion_ratio = 0.2  # Expand face box by 20% to include hair/ears/chin
     min_blur_threshold = 60.0  # Laplacian variance threshold for sharpness (lower = more blurry)
-    max_frames = 300  # Process limited frames (set to None for all frames)
+    max_frames = None  # Process limited frames (set to None for all frames)
     max_workers = 16 # Number of parallel workers
     
     # Check if thresholds were provided as command line arguments
