@@ -20,6 +20,87 @@ import time
 
 from deduplicate_faces import deduplicate_faces
 
+
+def compute_hsv_hist(frame: np.ndarray, bins: tuple[int, int, int] = (32, 32, 32)) -> np.ndarray:
+    """Compute a normalized HSV histogram for the frame."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1, 2], None, bins, [0, 180, 0, 256, 0, 256])
+    hist = cv2.normalize(hist, None, alpha=1.0, beta=0.0, norm_type=cv2.NORM_L1)
+    return hist.flatten().astype(np.float32)
+
+
+def compare_histograms(hist_a: np.ndarray, hist_b: np.ndarray, method: str = "chisq") -> float:
+    """Return distance between histograms using chi-square or correlation distance."""
+    method_lower = method.lower()
+    if method_lower == "chisq":
+        return float(cv2.compareHist(hist_a, hist_b, cv2.HISTCMP_CHISQR))
+    if method_lower == "corr":
+        correlation = cv2.compareHist(hist_a, hist_b, cv2.HISTCMP_CORREL)
+        return float(1.0 - correlation)
+    raise ValueError("Unknown histogram comparison method. Use 'chisq' or 'corr'.")
+
+
+def select_key_frames(
+    video_path: str,
+    *,
+    max_frames: int | None = None,
+    method: str = "chisq",
+    threshold: float = 0.6,
+    min_gap_sec: float = 1.0,
+    resize_width: int | None = 640,
+    resize_height: int | None = None,
+    histogram_bins: tuple[int, int, int] = (32, 32, 32),
+) -> tuple[list[tuple[int, float, np.ndarray]], int, int, float]:
+    """Select key frames based on HSV histogram differences."""
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    if fps is None or fps <= 0:
+        fps = 30.0
+
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    evaluated = 0
+    key_frames: list[tuple[int, float, np.ndarray]] = []
+    last_hist: np.ndarray | None = None
+    last_timestamp = -1e9
+
+    while True:
+        if max_frames is not None and evaluated >= max_frames:
+            break
+
+        ret, frame = capture.read()
+        if not ret:
+            break
+
+        evaluated += 1
+        timestamp_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
+        frame_index = int(capture.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        timestamp = timestamp_ms / 1000.0 if timestamp_ms else (frame_index / fps if fps else 0.0)
+
+        if resize_width is not None:
+            aspect_ratio = frame.shape[0] / frame.shape[1]
+            target_height = resize_height if resize_height is not None else max(1, int(resize_width * aspect_ratio))
+            scaled_frame = cv2.resize(frame, (resize_width, target_height), interpolation=cv2.INTER_AREA)
+        else:
+            scaled_frame = frame
+
+        hist = compute_hsv_hist(scaled_frame, histogram_bins)
+        should_select = last_hist is None
+        if not should_select:
+            distance = compare_histograms(hist, last_hist, method)
+            if (timestamp - last_timestamp) >= min_gap_sec and distance > threshold:
+                should_select = True
+
+        if should_select:
+            key_frames.append((frame_index, timestamp, frame.copy()))
+            last_hist = hist
+            last_timestamp = timestamp
+
+    capture.release()
+    return key_frames, total_frames, evaluated, fps
+
 # Load environment variables from .env file
 SCRIPT_DIR = Path(__file__).parent.parent
 ENV_FILE = SCRIPT_DIR / ".env"
@@ -330,13 +411,15 @@ def process_frame(frame_data: tuple, faces_folder: str, detector,
 def extract_faces_from_video(video_path: str, output_folder: str | None = None, 
                              min_confidence: float = 0.50, min_face_size: int = 50,
                              face_expansion_ratio: float = 0.2, min_blur_threshold: float = 100.0,
-                             max_frames: int | None = None, max_workers: int = 4):
+                             max_frames: int | None = None, max_workers: int = 4,
+                             keyframe_threshold: float = 0.6, keyframe_method: str = "chisq",
+                             keyframe_min_gap: float = 1.0, keyframe_resize_width: int | None = 640):
     """
-    Extract all faces from all frames in a video file using OpenCV DNN with parallel processing.
+    Extract faces from key frames in a video file using OpenCV DNN with parallel processing.
     
     Logic:
-    1. Extract frames from video file
-    2. Send frames to detect faces in parallel
+    1. Identify key frames using HSV histogram differences
+    2. Send key frames to detect faces in parallel
     3. If faces found, save with cropping, else ignore
     
     Args:
@@ -348,6 +431,10 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
         min_blur_threshold: Minimum Laplacian variance for sharpness filtering (default: 100.0, lower = more blurry)
         max_frames: Maximum number of frames to process (default: None = all frames)
         max_workers: Number of parallel workers (default: 4)
+        keyframe_threshold: Histogram distance threshold for selecting key frames
+        keyframe_method: Histogram comparison method ('chisq' or 'corr')
+        keyframe_min_gap: Minimum time gap between key frames in seconds
+        keyframe_resize_width: Optional resize width for histogram computation (None keeps original size)
     
     Returns:
         Dictionary with extraction statistics
@@ -367,53 +454,56 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
     # Load OpenCV DNN face detector
     detector = load_face_detector()
     
-    # Open video file
-    video_capture = cv2.VideoCapture(video_path)
-    
-    if not video_capture.isOpened():
-        raise ValueError(f"Unable to open video file: {video_path}")
-    
-    # Get video properties
-    total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = video_capture.get(cv2.CAP_PROP_FPS)
-    
-    # Limit frames to process
-    frames_to_process = total_frames if max_frames is None else min(total_frames, max_frames)
-    
     print(f"Processing video: {video_path}")
-    print(f"Total frames in video: {total_frames}")
-    print(f"Frames to process: {frames_to_process}")
-    print(f"FPS: {fps}")
     print(f"Output folder: {faces_folder}")
     print(f"Detector: OpenCV DNN (res10_300x300_ssd)")
     print(f"Min confidence: {min_confidence}")
     print(f"Parallel workers: {max_workers}")
+    print(f"Key frame method: {keyframe_method}")
+    print(f"Key frame threshold: {keyframe_threshold}")
     print("-" * 50)
     
-    # Step 1: Extract frames from video file
-    print(f"\nStep 1: Extracting {frames_to_process} frames from video...")
+    # Step 1: Extract key frames from video file
+    print(f"\nStep 1: Selecting key frames from video...")
     step1_start = time.time()
-    frames = []
-    frame_count = 0
+    key_frames, total_frames, frames_evaluated, fps = select_key_frames(
+        video_path,
+        max_frames=max_frames,
+        method=keyframe_method,
+        threshold=keyframe_threshold,
+        min_gap_sec=keyframe_min_gap,
+        resize_width=keyframe_resize_width,
+    )
+    frames = [(frame_index, frame_image) for frame_index, _timestamp, frame_image in key_frames]
+    frame_count = len(frames)
+    step1_elapsed = time.time() - step1_start
+    print(f"Total frames in video: {total_frames}")
+    print(f"Frames evaluated for key frames: {frames_evaluated}")
+    print(f"Key frames selected: {frame_count}")
+    print(f"FPS: {fps}")
+    print(f"✓ Key frame selection completed (Time: {step1_elapsed:.2f}s)")
     
-    try:
-        while frame_count < frames_to_process:
-            ret, frame = video_capture.read()
-            
-            if not ret:
-                break
-            
-            frame_count += 1
-            frames.append((frame_count, frame.copy()))
-            
-            if frame_count % 20 == 0:
-                print(f"  Extracted {frame_count}/{frames_to_process} frames...")
-        
-        step1_elapsed = time.time() - step1_start
-        print(f"✓ Extracted {len(frames)} frames (Time: {step1_elapsed:.2f}s)")
-    
-    finally:
-        video_capture.release()
+    if not frames:
+        print("\nNo key frames selected; exiting early.")
+        return {
+            'total_frames': total_frames,
+            'frames_evaluated': frames_evaluated,
+            'frames_with_faces': 0,
+            'frames_without_faces': 0,
+            'faces_extracted': 0,
+            'faces_rejected_low_confidence': 0,
+            'faces_rejected_small': 0,
+            'faces_rejected_blurry': 0,
+            'output_folder': faces_folder,
+            'time_frame_extraction': step1_elapsed,
+            'time_face_detection': 0.0,
+            'time_cleanup': 0.0,
+            'time_total': step1_elapsed,
+            'time_per_key_frame': 0.0,
+            'time_per_scanned_frame': (step1_elapsed / frames_evaluated) if frames_evaluated else 0.0,
+            'deduplication': None,
+            'key_frames_selected': 0,
+        }
     
     # Step 2: Send frames to detect faces in parallel
     print(f"\nStep 2: Detecting faces in {len(frames)} frames (parallel processing)...")
@@ -468,12 +558,16 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
     
     # Calculate total time
     total_time = step1_elapsed + step2_elapsed
+    time_per_key_frame = total_time / frame_count if frame_count else 0.0
+    time_per_scanned_frame = total_time / frames_evaluated if frames_evaluated else 0.0
     
     # Print summary
     print("\n" + "=" * 50)
     print("EXTRACTION SUMMARY")
     print("=" * 50)
-    print(f"Total frames processed: {frame_count}")
+    print(f"Total frames in video: {total_frames}")
+    print(f"Frames evaluated for key frames: {frames_evaluated}")
+    print(f"Key frames processed: {frame_count}")
     print(f"Frames with valid faces: {stats['frames_with_faces']}")
     print(f"Frames without faces: {stats['frames_without_faces']}")
     print(f"Total faces extracted: {stats['faces_extracted']}")
@@ -485,7 +579,8 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
     print(f"  Step 1 (Frame Extraction): {step1_elapsed:.2f}s")
     print(f"  Step 2 (Face Detection): {step2_elapsed:.2f}s")
     print(f"  Total Time: {total_time:.2f}s")
-    print(f"  Avg Time per Frame: {total_time/frame_count:.3f}s")
+    print(f"  Avg Time per Key Frame: {time_per_key_frame:.3f}s")
+    print(f"  Avg Time per Scanned Frame: {time_per_scanned_frame:.3f}s")
     print(f"\nOutput folder: {faces_folder}")
     print("=" * 50)
     
@@ -524,7 +619,9 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
         print(f"\nStep 3: Cleanup - Skipped (no faces extracted)")
     
     return {
-        'total_frames': frame_count,
+        'total_frames': total_frames,
+        'frames_evaluated': frames_evaluated,
+        'key_frames_selected': frame_count,
         'frames_with_faces': stats['frames_with_faces'],
         'frames_without_faces': stats['frames_without_faces'],
         'faces_extracted': stats['faces_extracted'],
@@ -536,7 +633,8 @@ def extract_faces_from_video(video_path: str, output_folder: str | None = None,
         'time_face_detection': step2_elapsed,
         'time_cleanup': step3_elapsed if 'step3_elapsed' in locals() else 0,
         'time_total': total_time_with_cleanup,
-        'time_per_frame': total_time/frame_count,
+        'time_per_key_frame': time_per_key_frame,
+        'time_per_scanned_frame': time_per_scanned_frame,
         'deduplication': dedup_results
     }
 
@@ -552,7 +650,7 @@ def main():
     4. Cleanup - Remove duplicate faces (same person) using VGG-Face
     
     Usage:
-        py test_extract_faces_from_video.py <video_path> [min_confidence] [face_expansion_ratio] [min_blur_threshold] [max_frames] [max_workers]
+        py test_extract_faces_from_video.py <video_path> [min_confidence] [face_expansion_ratio] [min_blur_threshold] [max_frames] [max_workers] [keyframe_threshold] [keyframe_method] [keyframe_min_gap]
     
     Examples:
         py test_extract_faces_from_video.py video.mp4
@@ -561,6 +659,7 @@ def main():
         py test_extract_faces_from_video.py video.mp4 0.5 0.2 100.0
         py test_extract_faces_from_video.py video.mp4 0.5 0.2 100.0 200
         py test_extract_faces_from_video.py video.mp4 0.5 0.2 100.0 200 8
+        py test_extract_faces_from_video.py video.mp4 0.5 0.2 100.0 200 8 0.8 corr 2.0
     """
     # Example usage - update with your video path
     video_path = r"path\to\your\video.mp4"  # Update this path
@@ -574,7 +673,10 @@ def main():
     face_expansion_ratio = 0.2  # Expand face box by 20% to include hair/ears/chin
     min_blur_threshold = 60.0  # Laplacian variance threshold for sharpness (lower = more blurry)
     max_frames = None  # Process limited frames (set to None for all frames)
-    max_workers = 16 # Number of parallel workers
+    max_workers = 16  # Number of parallel workers
+    keyframe_threshold = 0.6
+    keyframe_method = "chisq"
+    keyframe_min_gap = 1.0
     
     # Check if thresholds were provided as command line arguments
     if len(sys.argv) > 2:
@@ -591,6 +693,12 @@ def main():
     
     if len(sys.argv) > 6:
         max_workers = int(sys.argv[6])
+    if len(sys.argv) > 7:
+        keyframe_threshold = float(sys.argv[7])
+    if len(sys.argv) > 8:
+        keyframe_method = sys.argv[8]
+    if len(sys.argv) > 9:
+        keyframe_min_gap = float(sys.argv[9])
     
     print(f"Quality Settings:")
     print(f"  Min Confidence: {min_confidence}")
@@ -599,6 +707,10 @@ def main():
     print(f"  Max Frames: {max_frames if max_frames else 'All'}")
     print(f"  Parallel Workers: {max_workers}")
     print(f"  Detector: OpenCV DNN (res10_300x300_ssd)")
+    print(f"Key Frame Settings:")
+    print(f"  Threshold: {keyframe_threshold}")
+    print(f"  Method: {keyframe_method}")
+    print(f"  Min Gap (s): {keyframe_min_gap}")
     print()
     
     try:
@@ -608,7 +720,10 @@ def main():
             face_expansion_ratio=face_expansion_ratio,
             min_blur_threshold=min_blur_threshold,
             max_frames=max_frames,
-            max_workers=max_workers
+            max_workers=max_workers,
+            keyframe_threshold=keyframe_threshold,
+            keyframe_method=keyframe_method,
+            keyframe_min_gap=keyframe_min_gap
         )
         print("\nFace extraction completed successfully!")
         
