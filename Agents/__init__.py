@@ -13,8 +13,13 @@ Text Detection:
     - Ensemble averaging
     - Returns TextDetectionResult with markdown report
 
+Video Processing:
+    - KeyFrameExtractor, FaceDetector, FaceDeduplicator agents
+    - Sequential workflow for face extraction from videos
+    - Returns face extraction statistics
+
 Usage:
-    from Agents import run_image_detection_workflow, run_text_detection_workflow
+    from Agents import run_image_detection_workflow, run_text_detection_workflow, run_video_processing_workflow
     
     # Image detection
     result = await run_image_detection_workflow(
@@ -28,12 +33,20 @@ Usage:
         text="Sample text...",
         threshold=0.5
     )
+    
+    # Video processing
+    result = await run_video_processing_workflow(
+        video_path="video.mp4",
+        output_folder="faces"
+    )
 """
 
 from Agents.ImageAgents.image_workflow import run_image_detection_workflow
 from Agents.TextAgents.text_workflow import run_text_detection_workflow
+from Agents.VideoAgents.video_workflow import run_video_processing_workflow
 
 __all__ = [
     'run_image_detection_workflow',
-    'run_text_detection_workflow'
+    'run_text_detection_workflow',
+    'run_video_processing_workflow'
 ]

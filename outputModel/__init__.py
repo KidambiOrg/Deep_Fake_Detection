@@ -12,6 +12,13 @@ from .text_detection_output_model import (
     TextDetectionResult,
     IndividualModelScore
 )
+from .video_detection_output_model import (
+    KeyFrameMetadata,
+    KeyFrameExtractionOutput,
+    FaceDetectionStats,
+    FaceDeduplicationStats,
+    VideoProcessingSummary,
+)
 
 __all__ = [
     'DetectionOutput',
@@ -20,5 +27,10 @@ __all__ = [
     'IndividualModelResult',
     'ExifData',
     'TextDetectionResult',
-    'IndividualModelScore'
+    'IndividualModelScore',
+    'KeyFrameMetadata',
+    'KeyFrameExtractionOutput',
+    'FaceDetectionStats',
+    'FaceDeduplicationStats',
+    'VideoProcessingSummary',
 ]

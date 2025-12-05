@@ -408,6 +408,170 @@ def get_image_models(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ============================================================================
+# VIDEO PROCESSING ENDPOINTS
+# ============================================================================
+
+
+@app.route(route="analyzeVideo", methods=["POST"])
+async def analyze_video(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Analyze a video for face extraction using Agent Framework workflows.
+    
+    Uses sequential workflow pattern with 3 agents:
+    - KeyFrameExtractor: Extracts key frames from video
+    - FaceDetector: Detects and extracts faces from frames
+    - FaceDeduplicator: Removes duplicate faces
+    """
+    logging.info('Video analysis endpoint (Agent Framework) called.')
+
+    try:
+        # Import Agent Framework workflow
+        from Agents.VideoAgents import run_video_processing_workflow
+        from utils.image_file_helper import load_and_save_to_temp
+        import tempfile
+        import time
+        import base64
+        import os
+        
+        video_data = None
+        original_filename = "uploaded_video"
+        
+        # Check content type
+        content_type = req.headers.get('Content-Type', '').lower()
+        
+        if 'multipart/form-data' in content_type:
+            # Handle multipart file upload
+            logging.info("Processing multipart video upload...")
+            
+            files = req.files
+            if not files or 'video' not in files:
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": "Missing video file",
+                        "message": "Please upload a video file with 'video' field name"
+                    }),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            
+            video_file = files['video']
+            original_filename = video_file.filename if hasattr(video_file, 'filename') else "uploaded_video"
+            video_data = video_file.read()
+            
+        elif 'application/json' in content_type:
+            # Handle JSON with video URL or base64
+            try:
+                req_body = req.get_json()
+            except ValueError:
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": "Invalid JSON",
+                        "message": "Request body must be valid JSON"
+                    }),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            
+            if 'video_url' in req_body:
+                # Download video from URL
+                video_url = req_body['video_url']
+                logging.info(f"Downloading video from URL: {video_url}")
+                
+                import requests
+                response = requests.get(video_url, timeout=60)
+                if response.status_code != 200:
+                    return func.HttpResponse(
+                        json.dumps({
+                            "error": "Failed to download video",
+                            "message": f"HTTP {response.status_code}"
+                        }),
+                        status_code=400,
+                        mimetype="application/json"
+                    )
+                
+                video_data = response.content
+                original_filename = video_url.split('/')[-1] or "downloaded_video"
+            
+            elif 'video_base64' in req_body:
+                # Decode base64 video
+                try:
+                    video_data = base64.b64decode(req_body['video_base64'])
+                    original_filename = req_body.get('filename', 'uploaded_video')
+                except Exception as e:
+                    return func.HttpResponse(
+                        json.dumps({
+                            "error": "Invalid base64 video",
+                            "message": str(e)
+                        }),
+                        status_code=400,
+                        mimetype="application/json"
+                    )
+            else:
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": "Missing video",
+                        "message": "Provide 'video_url' or 'video_base64' in JSON"
+                    }),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+        else:
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "Unsupported content type",
+                    "message": "Use multipart/form-data or application/json"
+                }),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Save video to temporary file
+        logging.info("Saving video to temporary file...")
+        temp_dir = tempfile.gettempdir()
+        temp_video_path = os.path.join(temp_dir, f"video_{int(time.time())}_{original_filename}")
+        
+        with open(temp_video_path, 'wb') as f:
+            f.write(video_data)
+        
+        logging.info(f"Video saved to: {temp_video_path}")
+        
+        # Run Agent Framework workflow (cleanup handled in workflow's finally block)
+        logging.info("Running video processing workflow...")
+        result_summary = await run_video_processing_workflow(
+            video_path=temp_video_path,
+            output_folder=None,  # Auto-generate based on video path
+            min_confidence=0.50,
+            min_face_size=50,
+            max_frames=None,
+            max_workers=4,
+            keyframe_threshold=0.6,
+            keyframe_method="chisq",
+            keyframe_min_gap=1.0
+        )
+
+        result = result_summary.model_dump()
+        
+        logging.info("Video processing complete!")
+        
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+    
+    except Exception as e:
+        logging.error(f"Error in video analysis: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({
+                "error": "Video analysis failed",
+                "message": str(e)
+            }),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+# ============================================================================
 # TEXT DETECTION ENDPOINTS
 # ============================================================================
 
