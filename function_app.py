@@ -6,12 +6,29 @@ import warnings
 import asyncio
 
 # Fix protobuf import issue with Azure Functions Core Tools
-# The bundled protobuf in core tools is old and missing runtime_version
+# The bundled protobuf in core tools is old and missing required attributes
 try:
     import google.protobuf
+    
     # Add runtime_version if missing (workaround for old bundled protobuf)
     if not hasattr(google.protobuf, 'runtime_version'):
-        google.protobuf.runtime_version = lambda: "5.27.2"
+        # Create a mock Domain enum
+        class Domain:
+            PUBLIC = 0
+            GOOGLE_INTERNAL = 1
+        
+        # Create a mock module with all required attributes
+        class RuntimeVersionModule:
+            Domain = Domain  # Add Domain enum
+            
+            def __call__(self):
+                return "5.27.2"
+            
+            def ValidateProtobufRuntimeVersion(self, *args, **kwargs):
+                """Mock validation - always passes"""
+                pass
+        
+        google.protobuf.runtime_version = RuntimeVersionModule()
 except Exception:
     pass
 
