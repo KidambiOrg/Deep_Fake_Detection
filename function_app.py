@@ -6,8 +6,12 @@ import warnings
 import asyncio
 
 # Fix protobuf import issue with Azure Functions Core Tools
+<<<<<<< HEAD
 # The bundled protobuf in core tools shadows the venv's version and may be missing
 # the runtime_version submodule. Force the venv's protobuf to take precedence.
+=======
+# The bundled protobuf in core tools is old and missing required attributes
+>>>>>>> d1a6886846a8b7f527bf6daa6241e8dca0161210
 try:
     import importlib
     import google.protobuf.runtime_version  # noqa: F401 - force submodule load
@@ -17,13 +21,20 @@ except ImportError:
     import types
     import google.protobuf
     
+<<<<<<< HEAD
     if not hasattr(google.protobuf, 'runtime_version') or not isinstance(google.protobuf.runtime_version, types.ModuleType):
         mock_mod = types.ModuleType('google.protobuf.runtime_version')
         
+=======
+    # Add runtime_version if missing (workaround for old bundled protobuf)
+    if not hasattr(google.protobuf, 'runtime_version'):
+        # Create a mock Domain enum
+>>>>>>> d1a6886846a8b7f527bf6daa6241e8dca0161210
         class Domain:
             PUBLIC = 0
             GOOGLE_INTERNAL = 1
         
+<<<<<<< HEAD
         mock_mod.Domain = Domain
         mock_mod.DOMAIN = Domain.PUBLIC
         mock_mod.MAJOR = 5
@@ -38,6 +49,20 @@ except ImportError:
         
         sys.modules['google.protobuf.runtime_version'] = mock_mod
         google.protobuf.runtime_version = mock_mod
+=======
+        # Create a mock module with all required attributes
+        class RuntimeVersionModule:
+            Domain = Domain  # Add Domain enum
+            
+            def __call__(self):
+                return "5.27.2"
+            
+            def ValidateProtobufRuntimeVersion(self, *args, **kwargs):
+                """Mock validation - always passes"""
+                pass
+        
+        google.protobuf.runtime_version = RuntimeVersionModule()
+>>>>>>> d1a6886846a8b7f527bf6daa6241e8dca0161210
 except Exception:
     pass
 
