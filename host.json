@@ -8,10 +8,10 @@
       }
     },
     "logLevel": {
-      "default": "None",
+      "default": "Information",
       "Function": "Information",
       "Host.Aggregator": "Warning",
-      "Worker": "Warning"
+      "Worker": "Information"
     }
   },
   "functionTimeout": "-1",

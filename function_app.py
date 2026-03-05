@@ -6,12 +6,38 @@ import warnings
 import asyncio
 
 # Fix protobuf import issue with Azure Functions Core Tools
-# The bundled protobuf in core tools is old and missing runtime_version
+# The bundled protobuf in core tools shadows the venv's version and may be missing
+# the runtime_version submodule. Force the venv's protobuf to take precedence.
 try:
+    import importlib
+    import google.protobuf.runtime_version  # noqa: F401 - force submodule load
+    importlib.reload(google.protobuf)
+except ImportError:
+    # If the submodule truly doesn't exist, create a minimal mock module
+    import types
     import google.protobuf
-    # Add runtime_version if missing (workaround for old bundled protobuf)
-    if not hasattr(google.protobuf, 'runtime_version'):
-        google.protobuf.runtime_version = lambda: "5.27.2"
+    
+    if not hasattr(google.protobuf, 'runtime_version') or not isinstance(google.protobuf.runtime_version, types.ModuleType):
+        mock_mod = types.ModuleType('google.protobuf.runtime_version')
+        
+        class Domain:
+            PUBLIC = 0
+            GOOGLE_INTERNAL = 1
+        
+        mock_mod.Domain = Domain
+        mock_mod.DOMAIN = Domain.PUBLIC
+        mock_mod.MAJOR = 5
+        mock_mod.MINOR = 27
+        mock_mod.PATCH = 2
+        mock_mod.SUFFIX = ''
+        
+        def ValidateProtobufRuntimeVersion(*args, **kwargs):
+            pass
+        
+        mock_mod.ValidateProtobufRuntimeVersion = ValidateProtobufRuntimeVersion
+        
+        sys.modules['google.protobuf.runtime_version'] = mock_mod
+        google.protobuf.runtime_version = mock_mod
 except Exception:
     pass
 
@@ -95,13 +121,9 @@ async def preload_image_models(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Preload endpoint for image models called - loading from Models folder.')
     
     try:
-        from Agents.ImageAgents.image_workflow import get_or_create_agents
-        
-        # Create agents - this will cache them and trigger model loading
-        logging.info("Initializing agents and loading models...")
-        agents = get_or_create_agents()
-        
-        # Force model loading by calling each tool's load function
+        # Load models directly without agent creation
+        # Agent creation triggers Azure AI client initialization which is slow/hangs in debug mode
+        logging.info("Loading models directly into memory...")
         from Agents.ImageAgents.tools import nonescape_detect_tool
         from Agents.ImageAgents.tools import prithiv_v1_detect_tool
         from Agents.ImageAgents.tools import dima_vit_detect_tool
