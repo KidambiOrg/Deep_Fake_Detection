@@ -5,7 +5,7 @@ accelerate>=0.20.0
 numpy
 torchaudio
 sentencepiece
-protobuf==5.27.2
+protobuf==5.29.6
 Pillow
 torchvision
 scipy
